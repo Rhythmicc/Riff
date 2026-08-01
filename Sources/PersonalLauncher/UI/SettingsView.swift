@@ -81,7 +81,7 @@ struct SettingsView: View {
                     }
 
                     HStack {
-                        Text("点击键位后直接按新组合；连续按两次 Shift 可设为双击 Shift。")
+                        Text("点击键位后直接按新组合；连续按两次 Shift 可设为双击 Shift；按 Delete 可清除快捷键。")
                             .font(.system(size: 11))
                             .foregroundStyle(LauncherTheme.secondary)
                         Spacer()

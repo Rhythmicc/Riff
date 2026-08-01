@@ -5,9 +5,9 @@
 ## 已实现
 
 - 连续按两次 `Shift`：应用启动器
-- `⌥ V`：文本、链接、文件和图片的剪贴板历史与即时预览
+- 剪贴板历史：文本、链接、文件和图片的即时预览；默认不占用全局快捷键，可在设置中配置
 - `⌘ ⇧ T`：读取当前选中文本，再显示翻译窗口
-- `⌥ N`：始终置顶的 Markdown 便笺
+- 便笺：始终置顶的 Markdown 笔记；默认不占用全局快捷键，可从主窗口打开或在设置中配置
 - 搜索框中输入算式，例如 `12 * (8 + 2)`
 - 输入 `y=sinx`、`y=2x^2-3x` 等函数表达式，实时绘制自适应坐标图
 - 输入 `100 USD to CNY`，使用 ECB 每个工作日发布的参考汇率换算
@@ -27,9 +27,24 @@ open "dist/Riff.app"
 搜索框支持 macOS 标准的撤销、重做、剪切、复制、粘贴和全选快捷键。
 主窗口的输入框始终以纯文本读写剪贴板，不会把网页或文档中的 RTF/HTML 样式带到目标应用。
 
+## 默认快捷键
+
+| 功能 | 默认快捷键 |
+| --- | --- |
+| 打开或关闭主窗口 | 连续按两次 `Shift` |
+| 翻译选中文本 | `⌘ ⇧ T` |
+| 复制译文并关闭翻译窗口 | `⌘ Enter` |
+| 剪贴板历史 | 未设置，可从主窗口进入 |
+| 置顶便笺 | 未设置，可从主窗口进入 |
+| 任意 Riff 窗口中打开设置 | `⌘ ,` |
+
+快捷键可以在设置中重新录制。录制状态下按 Delete 可清除快捷键；从旧版升级时，原先默认的 `⌥ V` 和 `⌥ N` 会迁移为未设置，不再占用系统组合键。
+
 ## 下载
 
 预编译的 Universal 2 应用会发布在 GitHub Releases，同时支持 Apple Silicon 与 Intel Mac。
+
+[前往 Releases 下载 Riff](https://github.com/Rhythmicc/Riff/releases/latest)
 
 1. 下载 `Riff-<版本>-macOS-universal.zip` 并解压。
 2. 将 `Riff.app` 移到 `/Applications`。
@@ -37,14 +52,21 @@ open "dist/Riff.app"
 
 当前公开构建使用稳定本地要求进行 ad-hoc 签名，尚未使用 Apple Developer ID 公证。Release 同时提供 SHA-256 校验文件。
 
-维护者创建版本：
+### 自动发布
+
+发布工作流支持两种触发方式：
+
+1. 在 GitHub 的 **Actions → Release → Run workflow** 中直接运行。标签留空时，会读取 `Info.plist` 中的版本并创建对应的 `v<版本>` Release。
+2. 在本地推送与 `Info.plist` 版本一致的标签：
 
 ```zsh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-推送 `v*` 标签后，GitHub Actions 会构建 Universal 2 应用并创建 Release；也可以从 Actions 页面手动指定标签运行。
+工作流会先运行测试，再构建并验证 Universal 2 应用，随后把 ZIP 和 SHA-256 校验文件同时上传为 Actions Artifact 和 GitHub Release 附件。若 Release 上传阶段失败，仍可从对应的 Actions 运行页面下载构建产物进行排查。
+
+版本号必须使用 `v主版本.次版本.修订号` 格式，并与 `Info.plist` 中的 `CFBundleShortVersionString` 一致。
 
 ## 设计
 

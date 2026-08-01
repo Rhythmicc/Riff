@@ -74,7 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "shortcut",
                 "binding action=\(action.rawValue) kind=\(binding.kind.rawValue) keyCode=\(binding.keyCode) modifiers=\(binding.modifiers)"
             )
-            if binding.kind == .doubleShift {
+            if binding.kind == .disabled {
+                continue
+            } else if binding.kind == .doubleShift {
                 doubleShiftHotKey = DoubleShiftHotKey { [weak self] in
                     self?.perform(action)
                 }

@@ -22,7 +22,7 @@ struct ShortcutRecorder: NSViewRepresentable {
 }
 
 final class ShortcutRecorderButton: NSButton {
-    var binding = ShortcutBinding.doubleShift
+    var binding = ShortcutBinding.disabled
     var onRecord: ((ShortcutBinding) -> Void)?
     private(set) var isRecording = false
 
@@ -68,6 +68,11 @@ final class ShortcutRecorderButton: NSButton {
 
         if event.keyCode == 53 {
             window?.makeFirstResponder(nil)
+            return
+        }
+
+        if event.keyCode == 51 || event.keyCode == 117 {
+            finish(with: .disabled)
             return
         }
 
@@ -119,7 +124,7 @@ final class ShortcutRecorderButton: NSButton {
 
     func refreshTitle() {
         title = binding.displayName
-        toolTip = "点击后按下新的快捷键；连续按两次 Shift 可设为双击 Shift"
+        toolTip = "点击后按下新的快捷键；连续按两次 Shift 可设为双击 Shift；按 Delete 可清除"
     }
 
     private func finish(with binding: ShortcutBinding) {
