@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 @testable import PersonalLauncher
 
+@MainActor
 final class LauncherInputTests: XCTestCase {
     func testMarkedTextDefersLauncherKeyHandlingToInputMethod() {
         let editor = MarkedTextView()
@@ -14,27 +15,28 @@ final class LauncherInputTests: XCTestCase {
         XCTAssertFalse(LauncherKeyRouting.shouldDeferToInputMethod(firstResponder: NSView()))
     }
 
-    func testPasteAndCopyUsePlainTextOnly() {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        pasteboard.clearContents()
-        pasteboard.setString("note", forType: .string)
-        pasteboard.setData(Data("{\\rtf1 styled}".utf8), forType: .rtf)
+    func testLauncherConfiguresSystemFieldEditorForPlainText() throws {
+        let panel = KeyablePanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        panel.usesPlainTextFieldEditor = true
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
+        panel.contentView?.addSubview(field)
 
-        let editor = PlainTextFieldEditor(pasteboard: pasteboard)
-        editor.string = "prefix "
-        editor.setSelectedRange(NSRange(location: 7, length: 0))
-        editor.paste(nil)
+        let editor = try XCTUnwrap(panel.fieldEditor(true, for: field) as? NSTextView)
 
-        XCTAssertEqual(editor.string, "prefix note")
+        XCTAssertFalse(editor.isRichText)
+        XCTAssertFalse(editor.importsGraphics)
+        XCTAssertFalse(editor.allowsImageEditing)
 
-        editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
-        editor.copy(nil)
-
-        XCTAssertEqual(pasteboard.string(forType: .string), "prefix note")
-        XCTAssertNil(pasteboard.data(forType: .rtf))
-        XCTAssertNil(pasteboard.data(forType: .html))
-        XCTAssertTrue(pasteboard.types?.contains(.string) == true)
+        editor.string = "plain text"
+        editor.setSelectedRange(NSRange(location: 0, length: 10))
+        XCTAssertEqual(editor.writablePasteboardTypes.count, 1)
+        XCTAssertFalse(editor.writablePasteboardTypes.contains(.rtf))
+        XCTAssertFalse(editor.writablePasteboardTypes.contains(.html))
     }
 }
 

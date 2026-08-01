@@ -3,16 +3,18 @@ import SwiftUI
 
 final class KeyablePanel: NSPanel {
     var usesPlainTextFieldEditor = false
-    private lazy var plainTextFieldEditor = PlainTextFieldEditor()
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
     override func fieldEditor(_ createFlag: Bool, for object: Any?) -> NSText? {
-        guard usesPlainTextFieldEditor, object is NSTextField else {
-            return super.fieldEditor(createFlag, for: object)
+        let editor = super.fieldEditor(createFlag, for: object)
+        if usesPlainTextFieldEditor,
+           object is NSTextField,
+           let textView = editor as? NSTextView {
+            PlainTextFieldEditing.configure(textView)
         }
-        return plainTextFieldEditor
+        return editor
     }
 }
 

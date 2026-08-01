@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.1.0"
-        required: true
+        description: "Release tag; leave empty to use the version in Info.plist"
+        required: false
         type: string
 
 permissions:
@@ -29,13 +29,19 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
+          set -euo pipefail
+          app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            tag="$INPUT_TAG"
+            tag="${INPUT_TAG:-v$app_version}"
           else
             tag="$GITHUB_REF_NAME"
           fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          if [[ "$tag" != "v$app_version" && "$tag" != "v$app_version-"* ]]; then
+            echo "Release tag $tag does not match Info.plist version $app_version" >&2
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -67,6 +73,15 @@ jobs:
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
           echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
 
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Riff-${{ steps.version.outputs.tag }}-macOS-universal
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,6 +90,7 @@ jobs:
           CHECKSUM: ${{ steps.package.outputs.checksum }}
         shell: bash
         run: |
+          set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --clobber
           else

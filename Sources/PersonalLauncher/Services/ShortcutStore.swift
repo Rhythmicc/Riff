@@ -29,6 +29,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
 }
 
 enum ShortcutKind: String, Codable {
+    case disabled
     case keyCombination
     case doubleShift
 }
@@ -38,6 +39,13 @@ struct ShortcutBinding: Codable, Equatable {
     let keyCode: UInt32
     let modifiers: UInt32
     let keyLabel: String
+
+    static let disabled = ShortcutBinding(
+        kind: .disabled,
+        keyCode: 0,
+        modifiers: 0,
+        keyLabel: ""
+    )
 
     static let doubleShift = ShortcutBinding(
         kind: .doubleShift,
@@ -56,7 +64,11 @@ struct ShortcutBinding: Codable, Equatable {
     }
 
     var displayName: String {
-        guard kind == .keyCombination else { return "⇧ ⇧" }
+        switch kind {
+        case .disabled: return "未设置"
+        case .doubleShift: return "⇧ ⇧"
+        case .keyCombination: break
+        }
         var parts: [String] = []
         if modifiers & UInt32(cmdKey) != 0 { parts.append("⌘") }
         if modifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
@@ -76,27 +88,45 @@ final class ShortcutStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let defaultsKey = "shortcuts.v1"
+    private let defaultsMigrationKey = "shortcuts.emptyClipboardAndNoteDefaults.v2"
 
     static let defaultBindings: [ShortcutAction: ShortcutBinding] = [
         .launcher: .doubleShift,
-        .clipboard: .key(9, modifiers: UInt32(optionKey), label: "V"),
+        .clipboard: .disabled,
         .translation: .key(17, modifiers: UInt32(cmdKey | shiftKey), label: "T"),
+        .note: .disabled
+    ]
+
+    private static let legacyDefaultBindings: [ShortcutAction: ShortcutBinding] = [
+        .clipboard: .key(9, modifiers: UInt32(optionKey), label: "V"),
         .note: .key(45, modifiers: UInt32(optionKey), label: "N")
     ]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        var resolved = Self.defaultBindings
         if let data = defaults.data(forKey: defaultsKey),
            let stored = try? JSONDecoder().decode([String: ShortcutBinding].self, from: data) {
-            bindings = Self.defaultBindings
             for action in ShortcutAction.allCases {
                 if let binding = stored[action.rawValue] {
-                    bindings[action] = binding
+                    resolved[action] = binding
                 }
             }
-        } else {
-            bindings = Self.defaultBindings
         }
+
+        if !defaults.bool(forKey: defaultsMigrationKey) {
+            for action in [ShortcutAction.clipboard, .note]
+            where resolved[action] == Self.legacyDefaultBindings[action] {
+                resolved[action] = .disabled
+            }
+            defaults.set(true, forKey: defaultsMigrationKey)
+            let stored = Dictionary(uniqueKeysWithValues: resolved.map { ($0.key.rawValue, $0.value) })
+            if let data = try? JSONEncoder().encode(stored) {
+                defaults.set(data, forKey: defaultsKey)
+            }
+        }
+
+        bindings = resolved
     }
 
     func binding(for action: ShortcutAction) -> ShortcutBinding {
@@ -105,7 +135,8 @@ final class ShortcutStore: ObservableObject {
 
     @discardableResult
     func update(_ binding: ShortcutBinding, for action: ShortcutAction) -> Bool {
-        if let conflict = bindings.first(where: { otherAction, otherBinding in
+        if binding.kind != .disabled,
+           let conflict = bindings.first(where: { otherAction, otherBinding in
             otherAction != action && otherBinding == binding
         })?.key {
             errorMessage = "这个快捷键已用于“\(conflict.title)”。"
