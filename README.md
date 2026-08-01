@@ -62,8 +62,8 @@ Riff 需要 macOS 14 或更高版本。笔记编辑器使用固定版本的原�
 2. 在本地推送与 `Info.plist` 版本一致的标签：
 
 ```zsh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 工作流会先运行测试，再构建并验证 Universal 2 应用，随后把 ZIP 和 SHA-256 校验文件同时上传为 Actions Artifact 和 GitHub Release 附件。若 Release 上传阶段失败，仍可从对应的 Actions 运行页面下载构建产物进行排查。
