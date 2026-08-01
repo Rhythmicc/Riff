@@ -20,6 +20,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD_DIR/Riff" "$APP/Contents/MacOS/Riff"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+ENGINE_LICENSE="$(find "$ROOT/.build/checkouts" -path '*/swift-markdown-engine/LICENSE' -print -quit)"
+if [[ -z "$ENGINE_LICENSE" ]]; then
+    print -u2 "error: SwiftMarkdownEngine license was not found in the package checkout."
+    exit 1
+fi
+cp "$ENGINE_LICENSE" "$APP/Contents/Resources/SwiftMarkdownEngine-LICENSE.txt"
 
 if [[ -n "${RIFF_VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${RIFF_VERSION#v}" "$APP/Contents/Info.plist"
