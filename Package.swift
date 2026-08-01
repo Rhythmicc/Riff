@@ -4,13 +4,22 @@ import PackageDescription
 
 let package = Package(
     name: "Riff",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Riff", targets: ["PersonalLauncher"])
+        .executable(name: "Riff", targets: ["Riff"])
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/nodes-app/swift-markdown-engine.git",
+            exact: "0.11.0"
+        )
     ],
     targets: [
         .executableTarget(
-            name: "PersonalLauncher",
+            name: "Riff",
+            dependencies: [
+                .product(name: "MarkdownEngine", package: "swift-markdown-engine")
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
@@ -20,8 +29,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "PersonalLauncherTests",
-            dependencies: ["PersonalLauncher"]
+            name: "RiffTests",
+            dependencies: ["Riff"]
         )
     ]
 )

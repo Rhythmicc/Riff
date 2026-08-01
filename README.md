@@ -7,12 +7,12 @@
 - 连续按两次 `Shift`：应用启动器
 - 剪贴板历史：文本、链接、文件和图片的即时预览；默认不占用全局快捷键，可在设置中配置
 - `⌘ ⇧ T`：读取当前选中文本，再显示翻译窗口
-- 便笺：始终置顶的 Markdown 笔记；默认不占用全局快捷键，可从主窗口打开或在设置中配置
+- 便笺：始终置顶的原地渲染 Markdown 笔记；支持标题、列表、表格、代码块和水平分隔线；默认不占用全局快捷键，可从主窗口打开或在设置中配置
 - 搜索框中输入算式，例如 `12 * (8 + 2)`
 - 输入 `y=sinx`、`y=2x^2-3x` 等函数表达式，实时绘制自适应坐标图
 - 输入 `100 USD to CNY`，使用 ECB 每个工作日发布的参考汇率换算
 - OpenAI、OpenRouter、Gemini 三种翻译 Provider
-- API Key 保存在 macOS Keychain
+- API Key 保存在 macOS Keychain 的 `Riff` 服务项，不使用开发环境命名
 
 ## 构建
 
@@ -23,6 +23,8 @@ open "dist/Riff.app"
 ```
 
 首次启动时，macOS 会请求辅助功能权限，用于监听双击 `Shift` 和读取选中文本。应用以菜单栏程序运行。
+
+Riff 需要 macOS 14 或更高版本。笔记编辑器使用固定版本的原生 TextKit 2 MarkdownEngine，第三方许可信息随应用一同打包。
 
 搜索框支持 macOS 标准的撤销、重做、剪切、复制、粘贴和全选快捷键。
 主窗口的输入框始终以纯文本读写剪贴板，不会把网页或文档中的 RTF/HTML 样式带到目标应用。
@@ -60,8 +62,8 @@ open "dist/Riff.app"
 2. 在本地推送与 `Info.plist` 版本一致的标签：
 
 ```zsh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 工作流会先运行测试，再构建并验证 Universal 2 应用，随后把 ZIP 和 SHA-256 校验文件同时上传为 Actions Artifact 和 GitHub Release 附件。若 Release 上传阶段失败，仍可从对应的 Actions 运行页面下载构建产物进行排查。
