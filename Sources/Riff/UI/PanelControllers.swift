@@ -45,7 +45,11 @@ class MaterialPanelController {
         panel.level = level
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // AppKit composites the standard NSWindow shadow against whatever is
+        // behind a transparent borderless panel. Around rounded dark corners it
+        // becomes a pale, backdrop-dependent halo. Riff already draws its own
+        // hairline border, so keep the exterior genuinely transparent.
+        panel.hasShadow = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titleVisibility = .hidden
