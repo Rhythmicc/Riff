@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: version
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: swift test
+
+      - name: Build Universal 2 app
+        env:
+          RIFF_UNIVERSAL: "1"
+          RIFF_VERSION: ${{ steps.version.outputs.tag }}
+          RIFF_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/build-app.sh release
+
+      - name: Verify architectures and signature
+        run: |
+          lipo -archs dist/Riff.app/Contents/MacOS/Riff | grep -q "x86_64 arm64\|arm64 x86_64"
+          codesign --verify --deep --strict dist/Riff.app
+
+      - name: Package artifacts
+        id: package
+        shell: bash
+        run: |
+          tag='${{ steps.version.outputs.tag }}'
+          archive="Riff-${tag}-macOS-universal.zip"
+          checksum="${archive}.sha256"
+          ditto -c -k --sequesterRsrc --keepParent dist/Riff.app "$archive"
+          shasum -a 256 "$archive" > "$checksum"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --clobber
+          else
+            gh release create "$TAG" "$ARCHIVE" "$CHECKSUM" \
+              --target "$GITHUB_SHA" \
+              --title "Riff $TAG" \
+              --generate-notes
+          fi
