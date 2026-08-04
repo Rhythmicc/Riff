@@ -13,21 +13,15 @@ final class AppearanceSettingsTests: XCTestCase {
         backdrop.update(
             cornerRadius: 31,
             opacity: 0.62,
-            interactive: true,
             animated: false
         )
 
         XCTAssertEqual(backdrop.style, .regular)
         XCTAssertEqual(backdrop.cornerRadius, 31, accuracy: 0.001)
         XCTAssertEqual(backdrop.alphaValue, 0.62, accuracy: 0.001)
-        if #available(macOS 27.0, *) {
-            XCTAssertTrue(backdrop.effectIsInteractive)
-        }
-
         backdrop.update(
             cornerRadius: 18,
             opacity: 0.62,
-            interactive: true,
             animated: false
         )
 

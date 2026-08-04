@@ -50,8 +50,7 @@ private struct RiffPanelSurfaceModifier: ViewModifier {
                 .background {
                     RiffGlassBackdrop(
                         cornerRadius: cornerRadius,
-                        opacity: resolvedGlassOpacity,
-                        interactive: true
+                        opacity: resolvedGlassOpacity
                     )
                 }
                 .overlay { panelRim }
@@ -119,7 +118,6 @@ private struct RiffPanelSurfaceModifier: ViewModifier {
 private struct RiffGlassBackdrop: NSViewRepresentable {
     let cornerRadius: CGFloat
     let opacity: Double
-    let interactive: Bool
 
     func makeNSView(context: Context) -> RiffGlassBackdropView {
         let view = RiffGlassBackdropView()
@@ -127,7 +125,6 @@ private struct RiffGlassBackdrop: NSViewRepresentable {
         view.update(
             cornerRadius: cornerRadius,
             opacity: opacity,
-            interactive: interactive,
             animated: false
         )
         return view
@@ -137,7 +134,6 @@ private struct RiffGlassBackdrop: NSViewRepresentable {
         view.update(
             cornerRadius: cornerRadius,
             opacity: opacity,
-            interactive: interactive,
             animated: view.window?.isVisible == true
         )
     }
@@ -150,14 +146,10 @@ final class RiffGlassBackdropView: NSGlassEffectView {
     func update(
         cornerRadius targetRadius: CGFloat,
         opacity: Double,
-        interactive: Bool,
         animated: Bool
     ) {
         style = .regular
         alphaValue = opacity
-        if #available(macOS 27.0, *) {
-            effectIsInteractive = interactive
-        }
 
         guard animated,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
