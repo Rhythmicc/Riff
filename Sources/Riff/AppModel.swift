@@ -16,7 +16,7 @@ final class AppModel: ObservableObject {
     var onOpenTranslation: (() -> Void)?
     var onPerformSystemOperation: ((SystemOperation) -> Void)?
 
-    private let applicationIndex = ApplicationIndex()
+    private let applicationIndex: ApplicationIndex
     private let applicationSearch = ApplicationSearch()
     private let currencyConverter = CurrencyConverter()
     private let aiService = AIService()
@@ -43,12 +43,14 @@ final class AppModel: ObservableObject {
         clipboard: ClipboardStore,
         settings: SettingsStore? = nil,
         usageStore: LauncherUsageStore? = nil,
-        experienceMetrics: ExperienceMetricsStore? = nil
+        experienceMetrics: ExperienceMetricsStore? = nil,
+        applicationIndex: ApplicationIndex = ApplicationIndex()
     ) {
         self.clipboard = clipboard
         self.settings = settings
         self.usageStore = usageStore ?? LauncherUsageStore()
         self.experienceMetrics = experienceMetrics
+        self.applicationIndex = applicationIndex
 
         clipboardCancellable = clipboard.$items
             .dropFirst()

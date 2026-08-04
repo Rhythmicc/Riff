@@ -205,7 +205,16 @@ final class LauncherArchitectureTests: XCTestCase {
 
     @MainActor
     func testQueryTypedDuringInitialIndexingIsReplayedAfterIndexingCompletes() async throws {
-        let model = AppModel(clipboard: ClipboardStore())
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riff-initial-index-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try makeApplication(named: "Safari", bundleIdentifier: "test.safari", in: root)
+
+        let model = AppModel(
+            clipboard: ClipboardStore(),
+            applicationIndex: ApplicationIndex(roots: [root])
+        )
 
         model.query = "safari"
         if case .applications(_, _, _, let isSearching) = model.state.content {
