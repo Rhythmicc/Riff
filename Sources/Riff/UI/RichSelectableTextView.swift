@@ -108,12 +108,12 @@ struct StreamingSelectableTextView: NSViewRepresentable {
 
         let contentAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.91),
+            .foregroundColor: NSColor.labelColor,
             .paragraphStyle: paragraph
         ]
         let placeholderAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.48),
+            .foregroundColor: NSColor.secondaryLabelColor,
             .paragraphStyle: paragraph
         ]
 
@@ -192,7 +192,7 @@ enum RichTextRenderer {
 
             if isInsideCodeBlock {
                 lineFont = NSFont.monospacedSystemFont(ofSize: fontSize - 0.5, weight: .regular)
-                backgroundColor = NSColor.white.withAlphaComponent(0.045)
+                backgroundColor = NSColor.quaternarySystemFill
             } else if let heading = heading(in: line) {
                 line = heading.text
                 let sizes: [CGFloat] = [fontSize, fontSize + 8, fontSize + 5, fontSize + 3, fontSize + 1, fontSize]
@@ -326,7 +326,7 @@ enum RichTextRenderer {
             }
             if rawValue & 4 != 0 {
                 resolvedFont = NSFont.monospacedSystemFont(ofSize: font.pointSize - 0.5, weight: .regular)
-                styled.addAttribute(.backgroundColor, value: NSColor.white.withAlphaComponent(0.07), range: range)
+                styled.addAttribute(.backgroundColor, value: NSColor.quaternarySystemFill, range: range)
             }
             if rawValue & 8 != 0 {
                 styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)

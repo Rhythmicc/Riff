@@ -10,5 +10,6 @@ final class MaterialPanelTests: XCTestCase {
         XCTAssertFalse(controller.panel.isOpaque)
         XCTAssertEqual(controller.panel.backgroundColor, .clear)
         XCTAssertFalse(controller.panel.hasShadow)
+        XCTAssertFalse(controller.panel.styleMask.contains(.nonactivatingPanel))
     }
 }

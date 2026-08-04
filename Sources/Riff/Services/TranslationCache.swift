@@ -40,7 +40,7 @@ actor TranslationCache {
         model: String
     ) -> String {
         let payload = [
-            "translation-prompt-v1",
+            "translation-prompt-v2-markdown-paragraphs",
             provider.rawValue,
             model,
             targetLanguage.rawValue,

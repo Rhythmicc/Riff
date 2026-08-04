@@ -27,6 +27,99 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertEqual(manyRows, LauncherView.designSize.height)
     }
 
+    func testCollapsedLauncherUsesCompactSpotlightProportions() {
+        let size = LauncherView.windowSize(designHeight: LauncherView.collapsedDesignHeight)
+
+        XCTAssertLessThanOrEqual(size.width, 710)
+        XCTAssertLessThanOrEqual(size.height, 63)
+        XCTAssertGreaterThan(
+            LauncherView.answerFontSize / LauncherView.searchFontSize,
+            0.70
+        )
+    }
+
+    func testLauncherMotionDurationsStayBriefAndDeliberate() {
+        XCTAssertLessThan(LauncherMotion.presentationFadeDuration, LauncherMotion.presentationDuration)
+        XCTAssertLessThanOrEqual(LauncherMotion.presentationFadeDuration, LauncherMotion.resizeDuration)
+        XCTAssertLessThanOrEqual(LauncherMotion.resizeDuration, LauncherMotion.dismissalDuration)
+        XCTAssertLessThan(LauncherMotion.dismissalDuration, LauncherMotion.presentationDuration)
+        XCTAssertLessThanOrEqual(LauncherMotion.presentationDuration, 0.40)
+        XCTAssertGreaterThanOrEqual(LauncherMotion.resizeCoalescingDelay, 0.20)
+        XCTAssertGreaterThan(LauncherMotion.presentationScale, 1)
+        XCTAssertLessThan(LauncherMotion.presentationOvershootScale, 1)
+        XCTAssertGreaterThan(LauncherMotion.presentationReboundScale, 1)
+        XCTAssertLessThan(LauncherMotion.dismissalScale, 1)
+        XCTAssertGreaterThan(LauncherMotion.dismissalScale, 0.97)
+    }
+
+    func testVisibilityTransformsPreserveFrameAndUseTheGeometricCenter() {
+        let layer = CALayer()
+        layer.frame = CGRect(x: 17, y: 23, width: 240, height: 72)
+        let originalFrame = layer.frame
+
+        LauncherMotion.centerTransformAnchor(of: layer)
+
+        XCTAssertEqual(layer.anchorPoint, CGPoint(x: 0.5, y: 0.5))
+        XCTAssertEqual(layer.frame, originalFrame)
+    }
+
+    func testLauncherOnlyCoalescesResizesWhileItIsAlreadyExpanded() {
+        let collapsed: CGFloat = 62
+
+        XCTAssertEqual(
+            LauncherMotion.resizeDelay(
+                currentHeight: collapsed,
+                targetHeight: 420,
+                collapsedHeight: collapsed
+            ),
+            0
+        )
+        XCTAssertEqual(
+            LauncherMotion.resizeDelay(
+                currentHeight: 420,
+                targetHeight: collapsed,
+                collapsedHeight: collapsed
+            ),
+            0
+        )
+        XCTAssertEqual(
+            LauncherMotion.resizeDelay(
+                currentHeight: 420,
+                targetHeight: 250,
+                collapsedHeight: collapsed
+            ),
+            LauncherMotion.resizeCoalescingDelay
+        )
+    }
+
+    func testApplicationUpdatesKeepTheSamePresentationKind() {
+        let searching = LauncherContent.applications(
+            actions: [],
+            items: [],
+            hasMore: false,
+            isSearching: true
+        )
+        let loaded = LauncherContent.applications(
+            actions: [],
+            items: [],
+            hasMore: false,
+            isSearching: false
+        )
+
+        XCTAssertEqual(searching.presentationKind, .applications)
+        XCTAssertEqual(loaded.presentationKind, .applications)
+    }
+
+    func testUnicodeGridHeightTracksGridRowsInsteadOfIndividualSymbols() {
+        let oneRow = LauncherView.unicodeGridDesignHeight(itemCount: 8)
+        let twoRows = LauncherView.unicodeGridDesignHeight(itemCount: 16)
+        let manyRows = LauncherView.unicodeGridDesignHeight(itemCount: 64)
+
+        XCTAssertEqual(LauncherView.unicodeGridDesignHeight(itemCount: 1), oneRow)
+        XCTAssertLessThan(oneRow, twoRows)
+        XCTAssertEqual(manyRows, LauncherView.designSize.height)
+    }
+
     func testCommandNumberNavigationKeyCodes() {
         XCTAssertEqual(LauncherMode.navigationMode(for: 18), .apps)
         XCTAssertEqual(LauncherMode.navigationMode(for: 19), .clipboard)
@@ -54,5 +147,66 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertEqual(LauncherQuickAction.matching("翻译"), [.translation])
         XCTAssertEqual(LauncherQuickAction.matching("translate"), [.translation])
         XCTAssertEqual(LauncherQuickAction.matching("translator"), [.translation])
+    }
+
+    @MainActor
+    func testUnicodeIntentReplacesApplicationResults() async throws {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "U+2192"
+        model.refreshQuery()
+
+        for _ in 0..<30 where model.isSearchingUnicode {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertTrue(model.isUnicodeQuery)
+        XCTAssertTrue(model.hasInferredContent)
+        XCTAssertEqual(model.unicodeResults.first?.symbol, "→")
+        XCTAssertEqual(model.resultCount, 1)
+        XCTAssertTrue(model.selectionIsActionable)
+    }
+
+    @MainActor
+    func testUnicodeSelectionClampsInsteadOfWrapping() async throws {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "unicode arrow"
+        model.refreshQuery()
+
+        for _ in 0..<80 where model.isSearchingUnicode {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertGreaterThan(model.resultCount, LauncherView.unicodeGridColumnCount)
+        model.selectedIndex = model.resultCount - 1
+        model.moveUnicodeSelection(rows: 1, columns: LauncherView.unicodeGridColumnCount)
+        XCTAssertEqual(model.selectedIndex, model.resultCount - 1)
+
+        model.selectedIndex = 3
+        model.moveUnicodeSelection(rows: -1, columns: LauncherView.unicodeGridColumnCount)
+        XCTAssertEqual(model.selectedIndex, 3)
+    }
+
+    @MainActor
+    func testUnicodeResultsRemainVisibleWhileTheLatestQueryIsDebounced() async throws {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "U+2192"
+        model.refreshQuery()
+
+        for _ in 0..<80 where model.isSearchingUnicode {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.unicodeResults.first?.symbol, "→")
+
+        model.query = "emoji heart"
+        model.refreshQuery()
+        XCTAssertTrue(model.isSearchingUnicode)
+        XCTAssertEqual(model.unicodeResults.first?.symbol, "→")
+
+        for _ in 0..<80 where model.isSearchingUnicode {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(model.unicodeResults.contains {
+            $0.name.localizedCaseInsensitiveContains("heart")
+        })
     }
 }

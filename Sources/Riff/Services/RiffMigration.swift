@@ -65,36 +65,5 @@ enum RiffMigration {
         guard !fileManager.fileExists(atPath: riffDirectory.path) else { return }
 
         try fileManager.moveItem(at: legacyDirectory, to: riffDirectory)
-        try rewriteClipboardImagePaths(
-            in: riffDirectory,
-            replacing: legacyDirectory,
-            with: riffDirectory
-        )
-    }
-
-    private static func rewriteClipboardImagePaths(
-        in directory: URL,
-        replacing legacyDirectory: URL,
-        with riffDirectory: URL
-    ) throws {
-        let archiveURL = directory.appendingPathComponent("clipboard.json")
-        guard let data = try? Data(contentsOf: archiveURL),
-              let items = try? JSONDecoder().decode([ClipboardItem].self, from: data) else {
-            return
-        }
-
-        let legacyPrefix = legacyDirectory.path + "/"
-        let migrated = items.map { item in
-            guard item.kind == .image, item.text.hasPrefix(legacyPrefix) else { return item }
-            let suffix = item.text.dropFirst(legacyPrefix.count)
-            return ClipboardItem(
-                id: item.id,
-                kind: item.kind,
-                text: riffDirectory.appendingPathComponent(String(suffix)).path,
-                createdAt: item.createdAt
-            )
-        }
-        let encoded = try JSONEncoder().encode(migrated)
-        try encoded.write(to: archiveURL, options: .atomic)
     }
 }

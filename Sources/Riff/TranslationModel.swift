@@ -29,12 +29,16 @@ final class TranslationModel: ObservableObject {
     }
 
     func begin(with text: String) {
-        DiagnosticLogger.shared.log("translation", "model.begin sourceLength=\(text.count)")
-        if text == source, isLoading {
+        let normalized = TranslationTextNormalizer.normalize(text)
+        DiagnosticLogger.shared.log(
+            "translation",
+            "model.begin sourceLength=\(text.count) normalizedLength=\(normalized.count)"
+        )
+        if normalized == source, isLoading {
             DiagnosticLogger.shared.log("translation", "model.begin reused in-flight request")
             return
         }
-        source = text
+        source = normalized
         result = ""
         errorMessage = nil
         translate()
@@ -45,14 +49,16 @@ final class TranslationModel: ObservableObject {
     }
 
     func translate(forceRefresh: Bool = false) {
-        guard !source.isEmpty else {
+        let normalizedSource = TranslationTextNormalizer.normalize(source)
+        guard !normalizedSource.isEmpty else {
             DiagnosticLogger.shared.log("translation", "model.translate aborted: empty source")
             errorMessage = "没有读到选中的文字；请先选中文字，再按 ⌘ ⇧ T"
             return
         }
         isLoading = true
         errorMessage = nil
-        let source = source
+        if normalizedSource != source { source = normalizedSource }
+        let source = normalizedSource
         let provider = settings.provider
         let model = settings.model
         let direction = TranslationDirectionResolver.resolve(
@@ -108,9 +114,10 @@ final class TranslationModel: ObservableObject {
                     }
                 )
                 guard !Task.isCancelled, activeRequestID == requestID else { return }
-                result = translated
-                await cache.insert(translated, forKey: cacheKey)
-                DiagnosticLogger.shared.log("translation", "request succeeded resultLength=\(translated.count)")
+                let normalizedResult = TranslationTextNormalizer.normalize(translated)
+                result = normalizedResult
+                await cache.insert(normalizedResult, forKey: cacheKey)
+                DiagnosticLogger.shared.log("translation", "request succeeded resultLength=\(normalizedResult.count)")
             } catch is CancellationError {
                 DiagnosticLogger.shared.log("translation", "request cancelled")
             } catch {
@@ -129,7 +136,7 @@ final class TranslationModel: ObservableObject {
         streamBuffer.append(delta)
         let now = Date()
         if isFirstChunk || delta.contains("\n") || now.timeIntervalSince(lastStreamPublish) >= 0.035 {
-            result = streamBuffer
+            result = TranslationTextNormalizer.normalize(streamBuffer)
             lastStreamPublish = now
             streamUpdateCount += 1
             if isFirstChunk {

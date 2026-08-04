@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var shortcuts: ShortcutStore
+    @ObservedObject var experienceMetrics: ExperienceMetricsStore
     let close: () -> Void
     @State private var accessibilityGranted = SelectionReader.isAccessibilityTrusted
 
@@ -23,7 +24,55 @@ struct SettingsView: View {
             Divider().overlay(LauncherTheme.hairline)
 
             Form {
-                Section("翻译服务") {
+                Section("外观") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("玻璃不透明度")
+                            Spacer()
+                            Text("\(Int((settings.glassOpacity * 100).rounded()))%")
+                                .monospacedDigit()
+                                .foregroundStyle(LauncherTheme.secondary)
+                                .frame(width: 44, alignment: .trailing)
+                        }
+
+                        Slider(
+                            value: $settings.glassOpacity,
+                            in: AppearancePreferences.glassOpacityRange
+                        ) {
+                            Text("玻璃不透明度")
+                        } minimumValueLabel: {
+                            Image(systemName: "circle.lefthalf.filled")
+                                .foregroundStyle(LauncherTheme.secondary)
+                        } maximumValueLabel: {
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(LauncherTheme.secondary)
+                        }
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 15, weight: .medium))
+                            Text("搜索…")
+                                .font(.system(size: 16))
+                            Spacer()
+                        }
+                        .foregroundStyle(LauncherTheme.primary.opacity(0.82))
+                        .padding(.horizontal, 16)
+                        .frame(height: 44)
+                        .riffPanelSurface(cornerRadius: 22, style: .spotlight)
+                        .animation(.easeOut(duration: 0.12), value: settings.glassOpacity)
+
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("只调整启动器和翻译等浮动窗口的玻璃背景，文字与内容保持清晰。")
+                                .font(.system(size: 11))
+                                .foregroundStyle(LauncherTheme.secondary)
+                            Spacer()
+                            Button("恢复默认") { settings.resetGlassOpacity() }
+                                .controlSize(.small)
+                        }
+                    }
+                }
+
+                Section("AI 服务") {
                     Picker("Provider", selection: Binding(
                         get: { settings.provider },
                         set: { settings.selectProvider($0) }
@@ -32,7 +81,7 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    TextField("模型", text: $settings.model)
+                    TextField("翻译模型", text: $settings.model)
                         .onSubmit { settings.saveModel() }
 
                     HStack {
@@ -67,6 +116,49 @@ struct SettingsView: View {
                     Text("非母语文本 → 母语；母语文本 → 高优先级语言。")
                         .font(.system(size: 11))
                         .foregroundStyle(LauncherTheme.secondary)
+                }
+
+                Section("笔记智能补全") {
+                    Toggle("启用多语言自动补全", isOn: $settings.noteCompletionEnabled)
+
+                    Picker("运行位置", selection: $settings.noteCompletionBackend) {
+                        ForEach(NoteCompletionBackend.allCases) { backend in
+                            Text(backend.title).tag(backend)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(!settings.noteCompletionEnabled)
+
+                    if settings.noteCompletionBackend == .local {
+                        TextField("本地 llama.cpp 地址", text: $settings.noteCompletionLocalEndpoint)
+                            .disabled(!settings.noteCompletionEnabled)
+
+                        Picker("本地模型", selection: $settings.noteCompletionLocalModel) {
+                            ForEach(NoteCompletionLocalModel.allCases) { model in
+                                VStack(alignment: .leading) {
+                                    Text(model.title)
+                                    Text(model.detail)
+                                }
+                                .tag(model)
+                            }
+                        }
+                        .disabled(!settings.noteCompletionEnabled)
+
+                        Text("通过 llama.cpp 按需加载 Qwen3.5 4B 或 9B；同一时间只保留一个模型。Riff 不使用 API Key，也不会自动回退到付费云端。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(LauncherTheme.secondary)
+                    } else {
+                        TextField("低延迟补全模型", text: $settings.noteCompletionModel)
+                            .disabled(!settings.noteCompletionEnabled)
+                            .onSubmit { settings.saveNoteCompletionModel() }
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "sparkles")
+                        Text(completionPrivacyDescription)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(LauncherTheme.secondary)
                 }
 
                 Section("快捷键") {
@@ -116,6 +208,37 @@ struct SettingsView: View {
                         .foregroundStyle(LauncherTheme.secondary)
                 }
 
+                Section("本机体验指标") {
+                    metricRow("启动器会话", value: "\(experienceMetrics.snapshot.launcherSessions)")
+                    metricRow(
+                        "成功 / 放弃",
+                        value: "\(experienceMetrics.snapshot.successfulSessions) / \(experienceMetrics.snapshot.abandonedSessions)"
+                    )
+                    metricRow(
+                        "焦点就绪 P95",
+                        value: ExperienceMetricsStore.formatted(experienceMetrics.snapshot.focusReady.p95)
+                    )
+                    metricRow(
+                        "首次输入 P95",
+                        value: ExperienceMetricsStore.formatted(experienceMetrics.snapshot.firstInput.p95)
+                    )
+                    metricRow(
+                        "查询响应 P95",
+                        value: ExperienceMetricsStore.formatted(experienceMetrics.snapshot.queryResolution.p95)
+                    )
+
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("只在这台 Mac 上保存限长的耗时和计数，不记录查询、App 名称、剪贴板、笔记或翻译内容。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(LauncherTheme.secondary)
+                        Spacer()
+                        Button("复制摘要") { copyExperienceSummary() }
+                            .controlSize(.small)
+                        Button("重置") { experienceMetrics.reset() }
+                            .controlSize(.small)
+                    }
+                }
+
                 Section {
                     Text("API Key 只保存在 macOS Keychain 的 Riff 条目中。翻译窗口不会因选中文本自动出现。")
                         .font(.system(size: 12))
@@ -124,10 +247,10 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .background(LauncherTheme.contentSurface)
         }
-        .frame(width: 560, height: 540)
-        .background(LinearGradient(colors: [LauncherTheme.panelTop, LauncherTheme.panelBottom], startPoint: .top, endPoint: .bottom))
-        .environment(\.colorScheme, .dark)
+        .frame(width: 560, height: 620)
+        .riffPanelSurface(cornerRadius: 18, style: .content)
         .onAppear {
             settings.loadAPIKeyIfNeeded()
             refreshAccessibilityStatus()
@@ -147,6 +270,31 @@ struct SettingsView: View {
             )
             .frame(width: 142, height: 28)
         }
+    }
+
+    private func metricRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .monospacedDigit()
+                .foregroundStyle(LauncherTheme.secondary)
+        }
+    }
+
+    private func copyExperienceSummary() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(
+            experienceMetrics.diagnosticSummary,
+            forType: .string
+        )
+    }
+
+    private var completionPrivacyDescription: String {
+        if settings.noteCompletionBackend == .local {
+            return "停止输入片刻后由本机模型预测一小段续文；出现建议时按 Tab 接受。只把光标附近的有限上下文发送到上面的本机地址。"
+        }
+        return "停止输入片刻后预测一小段续文；出现建议时按 Tab 接受。补全复用上方 Provider 和 API Key，并只发送光标附近的有限上下文。"
     }
 
     private func pasteAPIKey() {

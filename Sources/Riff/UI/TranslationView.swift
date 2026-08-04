@@ -16,7 +16,8 @@ struct TranslationView: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(LauncherTheme.secondary)
                 Button(action: openSettings) { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
+                    .riffGlassButton()
+                    .controlSize(.small)
                     .help("打开设置")
                 PanelCloseButton(title: "关闭翻译", action: close)
             }
@@ -40,6 +41,7 @@ struct TranslationView: View {
                     isStreaming: model.isLoading
                 )
             }
+            .background(LauncherTheme.contentSurface)
 
             Divider().overlay(LauncherTheme.hairline)
 
@@ -47,7 +49,7 @@ struct TranslationView: View {
                 if let error = model.errorMessage {
                     Text(error)
                         .font(.system(size: 12.5))
-                        .foregroundStyle(Color(red: 0.82, green: 0.58, blue: 0.54))
+                        .foregroundStyle(Color(nsColor: .systemRed))
                         .lineLimit(1)
                 } else {
                     Text(streamSummary)
@@ -58,6 +60,8 @@ struct TranslationView: View {
                 Button("重试") { model.retry() }
                     .disabled(model.isLoading)
                     .keyboardShortcut("r", modifiers: .command)
+                    .riffGlassButton()
+                    .controlSize(.small)
                 Button(action: copyAndClose) {
                     HStack(spacing: 7) {
                         Text("复制译文")
@@ -66,15 +70,15 @@ struct TranslationView: View {
                 }
                     .disabled(model.result.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
+                    .riffGlassButton(prominent: true)
+                    .controlSize(.small)
             }
-            .buttonStyle(.borderless)
             .padding(.horizontal, 20)
             .frame(height: 52)
         }
         .frame(width: 840, height: 470)
-        .background(LinearGradient(colors: [LauncherTheme.panelTop, LauncherTheme.panelBottom], startPoint: .top, endPoint: .bottom))
+        .riffPanelSurface(cornerRadius: 20, style: .floating)
         .foregroundStyle(LauncherTheme.primary)
-        .environment(\.colorScheme, .dark)
     }
 
     private func translationPane(
@@ -99,8 +103,8 @@ struct TranslationView: View {
                     syntax: .markdownAndMath,
                     fontSize: 17,
                     textColor: text.isEmpty
-                        ? NSColor.white.withAlphaComponent(0.48)
-                        : NSColor.white.withAlphaComponent(0.91)
+                        ? .secondaryLabelColor
+                        : .labelColor
                 )
             }
         }

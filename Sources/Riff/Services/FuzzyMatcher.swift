@@ -2,8 +2,10 @@ import Foundation
 
 enum FuzzyMatcher {
     static func score(query: String, candidate: String) -> Int? {
-        let needle = normalized(query)
-        let haystack = normalized(candidate)
+        score(normalizedQuery: normalized(query), normalizedCandidate: normalized(candidate))
+    }
+
+    static func score(normalizedQuery needle: String, normalizedCandidate haystack: String) -> Int? {
         guard !needle.isEmpty else { return 0 }
 
         if haystack == needle { return 10_000 }
@@ -47,8 +49,13 @@ enum FuzzyMatcher {
     }
 
     static func contiguousScore(query: String, candidate: String) -> Int? {
-        let needle = normalized(query)
-        let haystack = normalized(candidate)
+        contiguousScore(normalizedQuery: normalized(query), normalizedCandidate: normalized(candidate))
+    }
+
+    static func contiguousScore(
+        normalizedQuery needle: String,
+        normalizedCandidate haystack: String
+    ) -> Int? {
         guard !needle.isEmpty else { return 0 }
         if haystack == needle { return 10_000 }
         if haystack.hasPrefix(needle) { return 8_000 - haystack.count }
@@ -62,7 +69,7 @@ enum FuzzyMatcher {
         return !previous.isLetter && !previous.isNumber
     }
 
-    private static func normalized(_ value: String) -> String {
+    static func normalized(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
             .lowercased()
     }

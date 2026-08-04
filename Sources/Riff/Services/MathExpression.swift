@@ -1,26 +1,69 @@
 import Darwin
 import Foundation
 
-struct MathExpression {
+struct MathExpression: Sendable {
     let source: String
+    let dependentVariable: String
     private let root: MathNode
 
+    var displayEquation: String {
+        "\(dependentVariable) = \(source)"
+    }
+
     init?(_ input: String) {
-        var normalized = input
+        guard let equation = Self.equationParts(input) else { return nil }
+        let normalized = equation.expression
             .lowercased()
-            .replacingOccurrences(of: " ", with: "")
+            .filter { !$0.isWhitespace }
             .replacingOccurrences(of: "π", with: "pi")
             .replacingOccurrences(of: "×", with: "*")
             .replacingOccurrences(of: "÷", with: "/")
             .replacingOccurrences(of: "−", with: "-")
-        guard normalized.hasPrefix("y=") else { return nil }
-        normalized.removeFirst(2)
         guard !normalized.isEmpty else { return nil }
 
         var parser = MathParser(normalized)
         guard let root = try? parser.parse(), parser.isAtEnd else { return nil }
         self.source = normalized
+        self.dependentVariable = equation.dependentVariable
         self.root = root
+    }
+
+    static func isFunctionCandidate(_ input: String) -> Bool {
+        equationParts(input) != nil
+    }
+
+    private static func equationParts(
+        _ input: String
+    ) -> (dependentVariable: String, expression: String)? {
+        let normalized = input
+            .lowercased()
+            .filter { !$0.isWhitespace }
+        let sides = normalized.split(separator: "=", omittingEmptySubsequences: false)
+        guard sides.count == 2 else { return nil }
+
+        let lhs = String(sides[0])
+        let rhs = String(sides[1])
+        let lhsLabel = canonicalDependentVariable(lhs)
+        let rhsLabel = canonicalDependentVariable(rhs)
+
+        switch (lhsLabel, rhsLabel) {
+        case (.some(let label), .none):
+            return (label, rhs)
+        case (.none, .some(let label)):
+            return (label, lhs)
+        default:
+            return nil
+        }
+    }
+
+    private static func canonicalDependentVariable(_ source: String) -> String? {
+        guard !source.isEmpty else { return nil }
+        if source == "fx" || source == "f(x)" { return "f(x)" }
+        guard source.count == 1,
+              let character = source.first,
+              character.isLetter,
+              character != "x" else { return nil }
+        return source
     }
 
     func evaluate(x: Double) -> Double {
@@ -28,7 +71,7 @@ struct MathExpression {
     }
 }
 
-private indirect enum MathNode {
+private indirect enum MathNode: Sendable {
     case number(Double)
     case variable
     case negate(MathNode)
@@ -54,7 +97,7 @@ private indirect enum MathNode {
     }
 }
 
-private enum MathFunction: String, CaseIterable {
+private enum MathFunction: String, CaseIterable, Sendable {
     case sqrt
     case sin
     case cos

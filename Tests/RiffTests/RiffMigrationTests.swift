@@ -34,7 +34,7 @@ final class RiffMigrationTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "ai.model"), "legacy-model")
     }
 
-    func testMovesApplicationSupportAndRewritesClipboardImagePaths() throws {
+    func testMovesApplicationSupportWithoutInterpretingLegacyClipboardData() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -62,10 +62,8 @@ final class RiffMigrationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: riffDirectory.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: riffDirectory.appendingPathComponent("notes.json").path))
 
-        let migratedData = try Data(contentsOf: riffDirectory.appendingPathComponent("clipboard.json"))
-        let migratedItems = try JSONDecoder().decode([ClipboardItem].self, from: migratedData)
-        XCTAssertEqual(migratedItems.count, 1)
-        XCTAssertTrue(migratedItems[0].text.contains("/Riff/clipboard-images/preview.png"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: migratedItems[0].text))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: riffDirectory.appendingPathComponent("clipboard.json").path
+        ))
     }
 }

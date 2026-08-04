@@ -2,9 +2,13 @@ import AppKit
 import SwiftUI
 
 struct LauncherView: View {
-    static let designSize = CGSize(width: 980, height: 650)
-    static let collapsedDesignHeight: CGFloat = 82
+    static let designSize = CGSize(width: 840, height: 650)
+    static let collapsedDesignHeight: CGFloat = 74
     static let scale: CGFloat = 0.84
+    static let unicodeGridColumnCount = 8
+    static let candidateRowDesignHeight: CGFloat = 56
+    static let searchFontSize: CGFloat = 24
+    static let answerFontSize: CGFloat = 17
 
     static func windowSize(designHeight: CGFloat) -> CGSize {
         CGSize(
@@ -15,13 +19,25 @@ struct LauncherView: View {
 
     static func resultDesignHeight(rowCount: Int) -> CGFloat {
         let rows = max(0, rowCount)
-        let rowHeight = CGFloat(rows) * 64
+        let rowHeight = CGFloat(rows) * candidateRowDesignHeight
         let spacing = CGFloat(max(0, rows - 1)) * 5
-        let contentPadding: CGFloat = 36
+        let contentPadding: CGFloat = 28
         let dividersAndFooter: CGFloat = 56
         return min(
             designSize.height,
             collapsedDesignHeight + rowHeight + spacing + contentPadding + dividersAndFooter
+        )
+    }
+
+    static func unicodeGridDesignHeight(itemCount: Int) -> CGFloat {
+        let rows = max(1, Int(ceil(Double(itemCount) / Double(unicodeGridColumnCount))))
+        let tileHeight = CGFloat(rows) * 96
+        let spacing = CGFloat(max(0, rows - 1)) * 8
+        let contentPadding: CGFloat = 36
+        let dividersAndFooter: CGFloat = 56
+        return min(
+            designSize.height,
+            collapsedDesignHeight + tileHeight + spacing + contentPadding + dividersAndFooter
         )
     }
 
@@ -30,18 +46,21 @@ struct LauncherView: View {
     let showNote: () -> Void
     let showSettings: () -> Void
     let setDesignHeight: (CGFloat) -> Void
+    let focusReady: () -> Void
 
     @FocusState private var searchFocused: Bool
-
+    @State private var confirmsClipboardClear = false
     var body: some View {
         VStack(spacing: 0) {
             searchHeader
             if model.shouldShowResults {
-                Divider().overlay(LauncherTheme.hairline)
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider().overlay(LauncherTheme.hairline)
-                footer
+                VStack(spacing: 0) {
+                    Divider().overlay(LauncherTheme.hairline)
+                    content
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Divider().overlay(LauncherTheme.hairline)
+                    footer
+                }
             }
         }
         .frame(
@@ -49,27 +68,66 @@ struct LauncherView: View {
             height: desiredDesignHeight,
             alignment: .top
         )
-        .background(
-            LinearGradient(colors: [LauncherTheme.panelTop, LauncherTheme.panelBottom], startPoint: .top, endPoint: .bottom)
+        .riffPanelSurface(
+            cornerRadius: model.shouldShowResults ? 26 : Self.collapsedDesignHeight / 2,
+            // Keep the same surface identity on both sides of the first
+            // keystroke. The NSPanel reveals the results by resizing; the
+            // background should never transition to another material.
+            style: .spotlight
         )
-        .scaleEffect(Self.scale)
+        // The launcher grows downward from the search bar. Scaling around the
+        // default center point would move the header every time the window
+        // height changes, even though the NSPanel's top edge stays fixed.
+        .scaleEffect(Self.scale, anchor: .topLeading)
         .frame(
             width: Self.windowSize(designHeight: desiredDesignHeight).width,
-            height: Self.windowSize(designHeight: desiredDesignHeight).height
+            height: Self.windowSize(designHeight: desiredDesignHeight).height,
+            alignment: .topLeading
         )
-        .environment(\.colorScheme, .dark)
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { searchFocused = true }
             setDesignHeight(desiredDesignHeight)
         }
-        .onChange(of: model.query) { model.refreshQuery() }
         .onChange(of: desiredDesignHeight) { _, height in setDesignHeight(height) }
+        .onReceive(NotificationCenter.default.publisher(for: .riffFocusLauncherSearch)) { _ in
+            // The hosting view exists while its panel is hidden, so onAppear is
+            // too early to establish an AppKit field editor. Toggle the focus
+            // binding after every explicit show request instead.
+            searchFocused = false
+            DispatchQueue.main.async { searchFocused = true }
+        }
+        .onChange(of: searchFocused) { _, focused in
+            if focused { focusReady() }
+        }
+        .confirmationDialog(
+            "清空剪贴板历史？",
+            isPresented: $confirmsClipboardClear,
+            titleVisibility: .visible
+        ) {
+            Button("清空全部记录", role: .destructive) {
+                model.clearClipboardHistory()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这会删除 Riff 在此 Mac 上保存的全部剪贴板记录和托管图片，无法撤销。")
+        }
     }
 
     private var desiredDesignHeight: CGFloat {
         guard model.shouldShowResults else { return Self.collapsedDesignHeight }
         if model.mode == .clipboard || model.isGraphQuery {
             return Self.designSize.height
+        }
+        if model.isUnicodeQuery {
+            return Self.unicodeGridDesignHeight(itemCount: model.resultCount)
+        }
+        if model.isSystemOperationQuery {
+            return Self.resultDesignHeight(rowCount: model.resultCount)
+        }
+        if model.isFallbackQuery {
+            return Self.resultDesignHeight(rowCount: model.resultCount)
+        }
+        if model.isAIAnswer {
+            return 520
         }
         if model.hasInferredContent {
             return 310
@@ -80,14 +138,23 @@ struct LauncherView: View {
     private var searchHeader: some View {
         HStack(spacing: 14) {
             Image(systemName: contextualSymbol)
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(LauncherTheme.secondary)
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(LauncherTheme.primary.opacity(0.78))
 
-            TextField(prompt, text: $model.query)
+            TextField(
+                "",
+                text: Binding(
+                    get: { model.query },
+                    set: { model.query = $0 }
+                ),
+                prompt: Text(prompt)
+                    .foregroundStyle(LauncherTheme.primary.opacity(0.72))
+            )
                 .textFieldStyle(.plain)
-                .font(.system(size: 27, weight: .regular, design: .rounded))
+                .font(.system(size: Self.searchFontSize, weight: .regular))
                 .foregroundStyle(LauncherTheme.primary)
                 .focused($searchFocused)
+                .accessibilityLabel(prompt)
 
             if !model.query.isEmpty {
                 Button { model.query = "" } label: {
@@ -97,19 +164,55 @@ struct LauncherView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 24)
+        .padding(.horizontal, 22)
+        .frame(height: Self.collapsedDesignHeight)
     }
 
     @ViewBuilder
     private var content: some View {
-        if model.hasInferredContent {
+        if model.isSystemOperationQuery {
+            systemOperationResults
+        } else if model.isFallbackQuery {
+            fallbackResults
+        } else if model.hasInferredContent {
             inferredResults
         } else {
             switch model.mode {
             case .apps: appResults
             case .clipboard: clipboardResults
             }
+        }
+    }
+
+    private var fallbackResults: some View {
+        resultList(model.fallbackActions) { index, action in
+            Button {
+                model.selectedIndex = index
+                if model.activateSelection() { close() }
+            } label: {
+                LauncherCommandRow(
+                    title: model.fallbackTitle(for: action),
+                    symbol: action.symbol,
+                    selected: model.selectedIndex == index
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var systemOperationResults: some View {
+        resultList(model.systemOperations) { index, operation in
+            Button {
+                model.selectedIndex = index
+                if model.activateSelection() { close() }
+            } label: {
+                LauncherCommandRow(
+                    title: operation.title,
+                    symbol: operation.symbol,
+                    selected: model.selectedIndex == index
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -122,47 +225,53 @@ struct LauncherView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    // The launcher only displays a small, capped result set. Using
-                    // two adjacent ForEach blocks inside a LazyVStack causes AppKit's
-                    // estimated lazy layout to leave a stale row-sized gap when a
-                    // quick action is inserted as the query changes. A regular stack
-                    // keeps actions and applications in one compact visual flow.
-                    VStack(spacing: 5) {
-                        ForEach(model.quickActions.indices, id: \.self) { index in
-                            let action = model.quickActions[index]
-                            Button {
-                                model.selectedIndex = index
-                                if model.activateSelection() { close() }
-                            } label: {
-                                LauncherActionRow(
-                                    action: action,
-                                    selected: model.selectedIndex == index
-                                )
+                let actions = model.quickActions
+                let applications = model.filteredApplications
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 5) {
+                            ForEach(0..<(actions.count + applications.count), id: \.self) { selectionIndex in
+                                Group {
+                                    if selectionIndex < actions.count {
+                                        let action = actions[selectionIndex]
+                                        Button {
+                                            model.selectedIndex = selectionIndex
+                                            if model.activateSelection() { close() }
+                                        } label: {
+                                            LauncherActionRow(
+                                                action: action,
+                                                selected: model.selectedIndex == selectionIndex
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    } else {
+                                        let application = applications[selectionIndex - actions.count]
+                                        Button {
+                                            model.selectedIndex = selectionIndex
+                                            if model.activateSelection() { close() }
+                                        } label: {
+                                            AppRow(
+                                                application: application,
+                                                selected: model.selectedIndex == selectionIndex
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .id(selectionIndex)
                             }
-                            .buttonStyle(.plain)
                         }
-
-                        ForEach(model.filteredApplications.indices, id: \.self) { index in
-                            let selectionIndex = index + model.quickActions.count
-                            let application = model.filteredApplications[index]
-                            Button {
-                                model.selectedIndex = selectionIndex
-                                if model.activateSelection() { close() }
-                            } label: {
-                                AppRow(
-                                    application: application,
-                                    selected: model.selectedIndex == selectionIndex
-                                )
-                            }
-                            .buttonStyle(.plain)
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                    .scrollIndicators(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onChange(of: model.selectedIndex) { _, selectedIndex in
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            proxy.scrollTo(selectedIndex, anchor: .center)
                         }
                     }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .scrollIndicators(.hidden)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -176,8 +285,13 @@ struct LauncherView: View {
                     ClipboardRow(item: item, selected: model.selectedIndex == index)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button("删除这条记录", role: .destructive) {
+                        model.removeClipboardItem(item)
+                    }
+                }
             }
-            .frame(width: 565)
+            .frame(width: 480)
 
             Rectangle().fill(LauncherTheme.hairline).frame(width: 1)
             ClipboardPreview(item: model.selectedClipboardItem())
@@ -187,8 +301,20 @@ struct LauncherView: View {
 
     private var inferredResults: some View {
         Group {
-            if let expression = model.graphExpression {
-                FunctionGraphCard(expression: expression)
+            if model.isAIAnswer {
+                aiAnswerCard
+            } else if model.isUnicodeQuery {
+                unicodeResults
+            } else if let expression = model.graphExpression,
+                      let plot = model.graphPlot {
+                FunctionGraphCard(expression: expression, plot: plot)
+            } else if model.isPlottingGraph {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("正在绘制函数图…")
+                }
+                .foregroundStyle(LauncherTheme.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let graphError = model.graphError {
                 graphErrorCard(graphError)
             } else if let result = model.currencyResult {
@@ -198,6 +324,118 @@ struct LauncherView: View {
             } else if let result = model.calculation {
                 calculationCard(result)
             } else { EmptyView() }
+        }
+    }
+
+    private var aiAnswerCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Label("AI 回答", systemImage: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if let summary = model.aiAnswerProviderSummary {
+                    Text(summary)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(LauncherTheme.secondary)
+                }
+                if model.isLoadingAIAnswer {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if let error = model.aiAnswerError, model.aiAnswerResult.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(error)
+                        .foregroundStyle(Color(nsColor: .systemRed))
+                    Text("可以在设置中检查 Provider、模型和 API Key。")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(LauncherTheme.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else if model.isLoadingAIAnswer {
+                StreamingSelectableTextView(
+                    source: model.aiAnswerResult,
+                    placeholder: "等待 Provider 首包…",
+                    fontSize: Self.answerFontSize
+                )
+            } else {
+                RichSelectableTextView(
+                    source: model.aiAnswerResult,
+                    syntax: .markdownAndMath,
+                    fontSize: Self.answerFontSize,
+                    textColor: .labelColor
+                )
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var unicodeResults: some View {
+        Group {
+            if model.isSearchingUnicode && model.unicodeResults.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("正在建立 Unicode 索引…")
+                }
+                .foregroundStyle(LauncherTheme.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.unicodeResults.isEmpty {
+                VStack(spacing: 9) {
+                    Image(systemName: "textformat")
+                        .font(.system(size: 25, weight: .light))
+                    Text("没有找到匹配的字符")
+                    Text("试试 unicode arrow、emoji grin 或 U+2192")
+                        .font(.system(size: 11.5))
+                }
+                .foregroundStyle(LauncherTheme.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ZStack(alignment: .topTrailing) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVGrid(
+                                columns: Array(
+                                    repeating: GridItem(.flexible(), spacing: 8),
+                                    count: Self.unicodeGridColumnCount
+                                ),
+                                spacing: 8
+                            ) {
+                                ForEach(model.unicodeResults.indices, id: \.self) { index in
+                                    let item = model.unicodeResults[index]
+                                    Button {
+                                        model.selectedIndex = index
+                                        if model.activateSelection() { close() }
+                                    } label: {
+                                        UnicodeSymbolTile(
+                                            item: item,
+                                            selected: model.selectedIndex == index
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("\(item.name.capitalized)\n\(item.codePointLabel)")
+                                    .id(index)
+                                }
+                            }
+                            .padding(18)
+                        }
+                        .scrollIndicators(.hidden)
+                        .onChange(of: model.selectedIndex) { _, selectedIndex in
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                proxy.scrollTo(selectedIndex, anchor: .center)
+                            }
+                        }
+                    }
+
+                    if model.isSearchingUnicode {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(12)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .padding(12)
+                    }
+                }
+            }
         }
     }
 
@@ -222,7 +460,11 @@ struct LauncherView: View {
             }
         }
         .padding(26)
-        .background(LauncherTheme.selection, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(LauncherTheme.hairline, lineWidth: 0.5)
+        }
         .padding(28)
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -254,21 +496,65 @@ struct LauncherView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Button(action: showNote) {
-                Label("便笺", systemImage: "note.text")
-            }
-            Button(action: showSettings) {
-                Label("设置", systemImage: "gearshape")
+            if model.mode == .clipboard {
+                Button {
+                    model.removeSelectedClipboardItem()
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+                .disabled(model.selectedClipboardItem() == nil)
+
+                Button {
+                    confirmsClipboardClear = true
+                } label: {
+                    Label("清空", systemImage: "trash.slash")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+                .disabled(model.clipboardHistoryCount == 0)
+
+                Button {
+                    model.revealClipboardStorage()
+                } label: {
+                    Label("本机存储", systemImage: "internaldrive")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+
+                if model.clipboardStorageError != nil {
+                    Label("保存异常", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help(model.clipboardStorageError ?? "")
+                } else {
+                    Text("\(model.clipboardHistoryCount) 条 · 仅存此 Mac")
+                        .foregroundStyle(LauncherTheme.secondary)
+                }
+            } else {
+                Button(action: showNote) {
+                    Label("便笺", systemImage: "note.text")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+                Button(action: showSettings) {
+                    Label("设置", systemImage: "gearshape")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
             }
             Spacer()
-            if model.isGraphQuery {
+            if model.isLoadingAIAnswer {
+                Label("AI 正在流式回答", systemImage: "sparkles")
+                    .foregroundStyle(LauncherTheme.secondary)
+            } else if model.isGraphQuery {
                 Label("实时函数图", systemImage: "chart.xyaxis.line")
                     .foregroundStyle(LauncherTheme.secondary)
             } else {
-                KeyCap(text: "↑↓")
+                KeyCap(text: model.isUnicodeQuery ? "←↑↓→" : "↑↓")
                 Text("选择").foregroundStyle(LauncherTheme.secondary)
                 KeyCap(text: "↩")
-                Text(model.mode == .clipboard || model.hasInferredContent ? "复制" : "打开")
+                Text(footerActionTitle)
                     .foregroundStyle(LauncherTheme.secondary)
             }
             KeyCap(text: "esc")
@@ -282,218 +568,34 @@ struct LauncherView: View {
 
     private var prompt: String {
         switch model.mode {
-        case .apps: return "搜索应用，输入算式或 y=sinx…"
+        case .apps: return "搜索…"
         case .clipboard: return "筛选剪贴板历史…"
         }
     }
 
     private var contextualSymbol: String {
+        if model.mode == .apps, model.query.isEmpty { return "magnifyingglass" }
+        if let operation = model.systemOperations.first { return operation.symbol }
+        if let fallback = model.selectedFallbackAction ?? model.fallbackActions.first {
+            return fallback.symbol
+        }
+        if model.isAIAnswer { return "sparkles" }
         if let action = model.quickActions.first { return action.symbol }
         if model.isGraphQuery { return "chart.xyaxis.line" }
+        if model.isUnicodeQuery {
+            return model.unicodeQuery?.scope == .emoji ? "face.smiling" : "textformat"
+        }
         if model.currencyResult != nil || model.isConvertingCurrency { return "arrow.left.arrow.right" }
         if model.calculation != nil { return "function" }
         return model.mode.symbol
     }
-}
 
-private struct LauncherActionRow: View {
-    let action: LauncherQuickAction
-    let selected: Bool
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: action.symbol)
-                .font(.system(size: 23, weight: .medium))
-                .foregroundStyle(LauncherTheme.secondary)
-                .frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(action.title)
-                    .font(.system(size: 17, weight: .medium))
-                Text(action.detail)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(LauncherTheme.secondary)
-            }
-            Spacer()
-            if selected {
-                Image(systemName: "return")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LauncherTheme.secondary)
-            }
+    private var footerActionTitle: String {
+        if model.isSystemOperationQuery { return "执行" }
+        if let fallback = model.selectedFallbackAction {
+            return fallback == .googleSearch ? "搜索" : "询问"
         }
-        .foregroundStyle(LauncherTheme.primary)
-        .padding(.horizontal, 18)
-        .frame(height: 64)
-        .background(
-            selected ? LauncherTheme.selection : .clear,
-            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-        )
-        .contentShape(Rectangle())
-    }
-}
-
-private struct AppRow: View {
-    let application: ApplicationRecord
-    let selected: Bool
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: application.url.path))
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(application.name)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(LauncherTheme.primary)
-                if let bundleIdentifier = application.bundleIdentifier {
-                    Text(bundleIdentifier)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(LauncherTheme.secondary)
-                }
-            }
-            Spacer()
-            Text(application.url.deletingLastPathComponent().lastPathComponent)
-                .font(.system(size: 12))
-                .foregroundStyle(LauncherTheme.secondary)
-            if selected {
-                Image(systemName: "return")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LauncherTheme.secondary)
-            }
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 64)
-        .background(selected ? LauncherTheme.selection : .clear,
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .contentShape(Rectangle())
-    }
-}
-
-private struct ClipboardRow: View {
-    let item: ClipboardItem
-    let selected: Bool
-
-    var body: some View {
-        HStack(spacing: 14) {
-            if let url = item.imagePreviewURL,
-               let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 42, height: 42)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.7)
-                    }
-            } else {
-                Image(systemName: item.kind.symbol)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(LauncherTheme.secondary)
-                    .frame(width: 42)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.summary.replacingOccurrences(of: "\n", with: " "))
-                    .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(LauncherTheme.primary)
-                    .lineLimit(2)
-                Text(item.createdAt, style: .relative)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(LauncherTheme.secondary)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 67)
-        .background(selected ? LauncherTheme.selection : .clear,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .contentShape(Rectangle())
-    }
-}
-
-private struct ClipboardPreview: View {
-    let item: ClipboardItem?
-
-    var body: some View {
-        Group {
-            if let item {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Label(item.previewTitle, systemImage: item.imagePreviewURL == nil ? item.kind.symbol : "photo")
-                        Spacer()
-                        Text(item.createdAt, style: .time)
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(LauncherTheme.secondary)
-                    if let url = item.imagePreviewURL,
-                       NSImage(contentsOf: url) != nil {
-                        AnimatedClipboardImageView(url: url)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.white.opacity(0.025))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.09), lineWidth: 0.7)
-                            }
-                    } else {
-                        RichSelectableTextView(
-                            source: item.text,
-                            syntax: .plain,
-                            fontSize: 15,
-                            textColor: NSColor.white.withAlphaComponent(0.91)
-                        )
-                    }
-                }
-                .padding(24)
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 28, weight: .light))
-                    Text("复制一些内容后会出现在这里")
-                }
-                .foregroundStyle(LauncherTheme.secondary)
-            }
-        }
-    }
-}
-
-private struct AnimatedClipboardImageView: NSViewRepresentable {
-    let url: URL
-
-    func makeNSView(context: Context) -> ClipboardNSImageView {
-        let imageView = ClipboardNSImageView()
-        imageView.imageAlignment = .alignCenter
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.imageFrameStyle = .none
-        imageView.animates = true
-        imageView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        imageView.setContentHuggingPriority(.defaultLow, for: .vertical)
-        imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        update(imageView)
-        return imageView
-    }
-
-    func updateNSView(_ imageView: ClipboardNSImageView, context: Context) {
-        update(imageView)
-    }
-
-    private func update(_ imageView: ClipboardNSImageView) {
-        guard imageView.representedURL != url else { return }
-        imageView.representedURL = url
-        imageView.image = NSImage(contentsOf: url)
-        imageView.animates = true
-    }
-}
-
-final class ClipboardNSImageView: NSImageView {
-    var representedURL: URL?
-
-    /// An NSImageView normally advertises its image's pixel dimensions as its
-    /// intrinsic size. In a split preview that lets a large screenshot widen the
-    /// entire HStack and push the history list outside the panel. The surrounding
-    /// SwiftUI frame owns this view's size; the image scales inside it.
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+        if model.mode == .clipboard || model.hasInferredContent { return "复制" }
+        return "打开"
     }
 }

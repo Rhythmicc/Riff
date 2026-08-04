@@ -17,7 +17,7 @@ struct InlineMarkdownEditor: View {
                 string: "开始写点什么…",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 17),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.28)
+                    .foregroundColor: NSColor.placeholderTextColor
                 ]
             )
         )
@@ -25,13 +25,13 @@ struct InlineMarkdownEditor: View {
 
     static var configuration: MarkdownEditorConfiguration {
         var theme = MarkdownEditorTheme.default
-        theme.bodyText = NSColor.white.withAlphaComponent(0.91)
-        theme.mutedText = NSColor.white.withAlphaComponent(0.46)
-        theme.disabledText = NSColor.white.withAlphaComponent(0.28)
-        theme.headingMarker = NSColor.white.withAlphaComponent(0.34)
-        theme.link = NSColor(calibratedRed: 0.62, green: 0.72, blue: 0.84, alpha: 0.96)
+        theme.bodyText = .labelColor
+        theme.mutedText = .secondaryLabelColor
+        theme.disabledText = .disabledControlTextColor
+        theme.headingMarker = .tertiaryLabelColor
+        theme.link = .linkColor
         theme.incompleteLink = theme.link.withAlphaComponent(0.68)
-        theme.strikethroughColor = NSColor.white.withAlphaComponent(0.52)
+        theme.strikethroughColor = .secondaryLabelColor
 
         var configuration = MarkdownEditorConfiguration.default
         configuration.theme = theme

@@ -1,214 +1,849 @@
 import AppKit
+import Combine
 import Foundation
 
+/// Coordinates launcher input and publishes one coherent presentation snapshot
+/// per transition. Parsing and search services do not live in the SwiftUI view.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var query = ""
-    @Published var mode: LauncherMode = .apps
-    @Published var selectedIndex = 0
-    @Published private(set) var applications: [ApplicationRecord] = []
+    @Published private(set) var state = LauncherState() {
+        didSet { recordSettledQueryIfNeeded() }
+    }
     @Published private(set) var isIndexing = true
-    @Published private(set) var currencyResult: String?
-    @Published private(set) var currencyError: String?
-    @Published private(set) var isConvertingCurrency = false
-    @Published private(set) var graphExpression: MathExpression?
-    @Published private(set) var graphError: String?
 
     let clipboard: ClipboardStore
     var onOpenNote: (() -> Void)?
     var onOpenTranslation: (() -> Void)?
-    private let applicationIndex = ApplicationIndex()
-    private let currencyConverter = CurrencyConverter()
-    private var currencyTask: Task<Void, Never>?
+    var onPerformSystemOperation: ((SystemOperation) -> Void)?
 
-    init(clipboard: ClipboardStore) {
+    private let applicationIndex = ApplicationIndex()
+    private let applicationSearch = ApplicationSearch()
+    private let currencyConverter = CurrencyConverter()
+    private let aiService = AIService()
+    private let usageStore: LauncherUsageStore
+    private let experienceMetrics: ExperienceMetricsStore?
+    private weak var settings: SettingsStore?
+    private var applicationRefreshTask: Task<Void, Never>?
+    private var applicationSearchTask: Task<Void, Never>?
+    private var currencyTask: Task<Void, Never>?
+    private var graphTask: Task<Void, Never>?
+    private var unicodeSearchTask: Task<Void, Never>?
+    private var aiAnswerTask: Task<Void, Never>?
+    private var clipboardCancellable: AnyCancellable?
+    private var indexedApplications: [ApplicationRecord] = []
+    private var indexedRunningBundleIdentifiers = Set<String>()
+    private var rankedApplications: [ApplicationRecord] = []
+    private var applicationResultLimit = 8
+    private var aiStreamBuffer = ""
+    private var lastAIStreamPublish = Date.distantPast
+    private var metricsQueryToken: UInt64?
+    private var metricsQueryText = ""
+
+    init(
+        clipboard: ClipboardStore,
+        settings: SettingsStore? = nil,
+        usageStore: LauncherUsageStore? = nil,
+        experienceMetrics: ExperienceMetricsStore? = nil
+    ) {
         self.clipboard = clipboard
-        Task {
-            let loaded = await applicationIndex.load()
-            let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-            applications = loaded.sorted { lhs, rhs in
-                let lhsRunning = lhs.bundleIdentifier.map(running.contains) ?? false
-                let rhsRunning = rhs.bundleIdentifier.map(running.contains) ?? false
-                if lhsRunning != rhsRunning { return lhsRunning }
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        self.settings = settings
+        self.usageStore = usageStore ?? LauncherUsageStore()
+        self.experienceMetrics = experienceMetrics
+
+        clipboardCancellable = clipboard.$items
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self, self.state.mode == .clipboard else { return }
+                self.publishClipboard(query: self.state.query)
             }
-            isIndexing = false
+
+        refreshApplications(force: true, showsInitialIndexingState: true)
+    }
+
+    var query: String {
+        get { state.query }
+        set { processQuery(newValue) }
+    }
+
+    var mode: LauncherMode { state.mode }
+    var contentKind: LauncherContentKind { state.content.presentationKind }
+
+    var selectedIndex: Int {
+        get { state.selectedIndex }
+        set {
+            let clamped = max(0, newValue)
+            guard clamped != state.selectedIndex else { return }
+            var next = state
+            next.selectedIndex = clamped
+            state = next
         }
     }
 
     var filteredApplications: [ApplicationRecord] {
-        guard !query.isEmpty else { return Array(applications.prefix(8)) }
-        var ranked: [(application: ApplicationRecord, score: Int)] = []
-        for application in applications {
-            if let score = Self.applicationScore(query: query, application: application) {
-                ranked.append((application: application, score: score))
-            }
-        }
-        ranked.sort { lhs, rhs in
-            if lhs.score == rhs.score { return lhs.application.name < rhs.application.name }
-            return lhs.score > rhs.score
-        }
-        return ranked.prefix(8).map { $0.application }
-    }
-
-    nonisolated static func applicationScore(
-        query: String,
-        application: ApplicationRecord
-    ) -> Int? {
-        let nameScore = FuzzyMatcher.score(query: query, candidate: application.name)
-        // Bundle identifiers remain searchable, but only by a contiguous fragment;
-        // never allow a match to jump between the display name and bundle ID.
-        let bundleScore = application.bundleIdentifier
-            .flatMap { FuzzyMatcher.contiguousScore(query: query, candidate: $0) }
-            .map { $0 - 500 }
-        return [nameScore, bundleScore].compactMap { $0 }.max()
+        guard case .applications(_, let items, _, _) = state.content else { return [] }
+        return items
     }
 
     var filteredClipboard: [ClipboardItem] {
-        Array(clipboard.filtered(by: query).prefix(7))
+        guard case .clipboard(let items) = state.content else { return [] }
+        return items
     }
 
     var calculation: String? {
-        let source = query.hasPrefix("=") ? String(query.dropFirst()) : query
-        guard source.rangeOfCharacter(from: .decimalDigits) != nil,
-              source.rangeOfCharacter(from: CharacterSet(charactersIn: "+-*/^()")) != nil,
-              let result = try? Calculator.evaluate(source) else { return nil }
-        return Calculator.formatted(result)
+        guard case .calculation(let value) = state.content else { return nil }
+        return value
     }
 
-    var resultCount: Int {
-        if isGraphQuery { return 0 }
-        if calculation != nil || currencyResult != nil || isConvertingCurrency { return 1 }
-        switch mode {
-        case .apps: return filteredApplications.count + quickActions.count
-        case .clipboard: return filteredClipboard.count
-        }
+    var currencyResult: String? {
+        guard case .currency(let result, _, _) = state.content else { return nil }
+        return result
     }
 
-    /// The default launcher is intentionally just a search bar. Results expand
-    /// only after the user starts a query, while explicitly opening clipboard
-    /// mode still shows its contents immediately.
-    var shouldShowResults: Bool {
-        mode == .clipboard || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var currencyError: String? {
+        guard case .currency(_, let error, _) = state.content else { return nil }
+        return error
     }
 
-    func switchMode(_ newMode: LauncherMode) {
-        mode = newMode
-        selectedIndex = 0
-        query = ""
+    var isConvertingCurrency: Bool {
+        guard case .currency(_, _, let isLoading) = state.content else { return false }
+        return isLoading
     }
 
-    func moveSelection(by offset: Int) {
-        guard resultCount > 0 else { return }
-        selectedIndex = (selectedIndex + offset + resultCount) % resultCount
+    var graphExpression: MathExpression? {
+        guard case .graph(let expression, _, _, _) = state.content else { return nil }
+        return expression
     }
 
-    @discardableResult
-    func activateSelection() -> Bool {
-        guard !isGraphQuery else { return false }
-        if let currencyResult {
-            copyText(currencyResult)
-            return true
-        }
-        if let calculation {
-            copyText(calculation)
-            return true
-        }
-        switch mode {
-        case .apps:
-            if quickActions.indices.contains(selectedIndex) {
-                switch quickActions[selectedIndex] {
-                case .note:
-                    onOpenNote?()
-                    return true
-                case .clipboard:
-                    switchMode(.clipboard)
-                    return false
-                case .translation:
-                    onOpenTranslation?()
-                    return true
-                }
-            }
-            let applicationIndexValue = selectedIndex - quickActions.count
-            if filteredApplications.indices.contains(applicationIndexValue) {
-                applicationIndex.launch(filteredApplications[applicationIndexValue])
-                return true
-            }
-        case .clipboard:
-            if filteredClipboard.indices.contains(selectedIndex) {
-                clipboard.copy(filteredClipboard[selectedIndex])
-                return true
-            }
-        }
+    var graphPlot: FunctionPlotData? {
+        guard case .graph(_, let plot, _, _) = state.content else { return nil }
+        return plot
+    }
+
+    var graphError: String? {
+        guard case .graph(_, _, let error, _) = state.content else { return nil }
+        return error
+    }
+
+    var isPlottingGraph: Bool {
+        guard case .graph(_, _, _, let isLoading) = state.content else { return false }
+        return isLoading
+    }
+
+    var unicodeResults: [UnicodeSymbol] {
+        guard case .unicode(_, let items, _) = state.content else { return [] }
+        return items
+    }
+
+    var isSearchingUnicode: Bool {
+        guard case .unicode(_, _, let isSearching) = state.content else { return false }
+        return isSearching
+    }
+
+    var unicodeQuery: UnicodeSearchQuery? {
+        guard case .unicode(let query, _, _) = state.content else { return nil }
+        return query
+    }
+
+    var isUnicodeQuery: Bool { unicodeQuery != nil }
+
+    var isGraphQuery: Bool {
+        if case .graph = state.content { return true }
         return false
     }
 
-    func selectedClipboardItem() -> ClipboardItem? {
-        guard mode == .clipboard, filteredClipboard.indices.contains(selectedIndex) else { return nil }
-        return filteredClipboard[selectedIndex]
+    var systemOperations: [SystemOperation] {
+        guard case .systemOperations(let operations) = state.content else { return [] }
+        return operations
     }
 
-    func reset(for mode: LauncherMode) {
-        self.mode = mode
-        query = ""
-        selectedIndex = 0
-        refreshQuery()
+    var isSystemOperationQuery: Bool { !systemOperations.isEmpty }
+
+    var fallbackActions: [LauncherFallbackAction] {
+        guard case .fallback(_, let actions) = state.content else { return [] }
+        return actions
     }
 
-    func refreshQuery() {
-        selectedIndex = 0
-        currencyTask?.cancel()
-        currencyResult = nil
-        currencyError = nil
-        isConvertingCurrency = false
-        graphExpression = nil
-        graphError = nil
-
-        if isGraphQuery {
-            graphExpression = MathExpression(query)
-            if graphExpression == nil, query.trimmingCharacters(in: .whitespacesAndNewlines).count > 2 {
-                graphError = "无法解析这个函数；可以试试 y=sinx 或 y=x^2-2x"
-            }
-            return
-        }
-
-        guard let conversion = CurrencyQuery.parse(query) else { return }
-        isConvertingCurrency = true
-        currencyTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 240_000_000)
-            guard !Task.isCancelled, let self else { return }
-            do {
-                self.currencyResult = try await self.currencyConverter.convert(conversion)
-            } catch {
-                self.currencyError = error.localizedDescription
-            }
-            self.isConvertingCurrency = false
-        }
+    var selectedFallbackAction: LauncherFallbackAction? {
+        guard fallbackActions.indices.contains(state.selectedIndex) else { return nil }
+        return fallbackActions[state.selectedIndex]
     }
 
-    var isGraphQuery: Bool {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("y=")
+    var isFallbackQuery: Bool {
+        if case .fallback = state.content { return true }
+        return false
+    }
+
+    var isAIAnswer: Bool {
+        if case .aiAnswer = state.content { return true }
+        return false
+    }
+
+    var aiAnswerResult: String {
+        guard case .aiAnswer(_, _, let result, _, _) = state.content else { return "" }
+        return result
+    }
+
+    var aiAnswerError: String? {
+        guard case .aiAnswer(_, _, _, let error, _) = state.content else { return nil }
+        return error
+    }
+
+    var isLoadingAIAnswer: Bool {
+        guard case .aiAnswer(_, _, _, _, let isLoading) = state.content else { return false }
+        return isLoading
+    }
+
+    var canCopyAIAnswer: Bool { !isLoadingAIAnswer && !aiAnswerResult.isEmpty }
+
+    var aiAnswerProviderSummary: String? {
+        guard case .aiAnswer(let provider, let model, _, _, _) = state.content else { return nil }
+        return "\(provider.title) · \(model)"
+    }
+
+    func fallbackTitle(for action: LauncherFallbackAction) -> String {
+        action.title(for: state.query)
+    }
+
+    var quickActions: [LauncherQuickAction] {
+        guard case .applications(let actions, _, _, _) = state.content else { return [] }
+        return actions
     }
 
     var hasInferredContent: Bool {
-        isGraphQuery || calculation != nil || currencyResult != nil || isConvertingCurrency
+        switch state.content {
+        case .calculation, .currency, .graph, .unicode, .aiAnswer: return true
+        case .idle, .systemOperations, .fallback, .applications, .clipboard: return false
+        }
+    }
+
+    var resultCount: Int {
+        switch state.content {
+        case .idle, .graph: return 0
+        case .systemOperations(let operations): return operations.count
+        case .fallback(_, let actions): return actions.count
+        case .aiAnswer(_, _, let result, _, let isLoading):
+            return !result.isEmpty && !isLoading ? 1 : 0
+        case .applications(let actions, let items, _, _): return actions.count + items.count
+        case .clipboard(let items): return items.count
+        case .calculation, .currency: return 1
+        case .unicode(_, let items, _): return items.count
+        }
+    }
+
+    var shouldShowResults: Bool {
+        state.mode == .clipboard
+            || !state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var selectionIsActionable: Bool {
         !isGraphQuery && resultCount > 0
     }
 
-    var showsNoteAction: Bool {
-        quickActions.contains(.note)
+    var showsNoteAction: Bool { quickActions.contains(.note) }
+
+    func switchMode(_ newMode: LauncherMode) {
+        cancelPendingWork()
+        experienceMetrics?.cancelActiveQuery()
+        metricsQueryToken = nil
+        metricsQueryText = ""
+        rankedApplications = []
+        applicationResultLimit = 8
+        let content: LauncherContent = newMode == .clipboard
+            ? .clipboard(Array(clipboard.items.prefix(7)))
+            : .idle
+        state = LauncherState(query: "", mode: newMode, selectedIndex: 0, content: content)
     }
 
-    var quickActions: [LauncherQuickAction] {
-        guard mode == .apps else { return [] }
-        return LauncherQuickAction.matching(query)
+    func reset(for mode: LauncherMode) {
+        switchMode(mode)
+    }
+
+    /// Kept as an explicit hook for tests and external state changes. Normal text
+    /// input calls `processQuery` directly through the query binding.
+    func refreshQuery() {
+        processQuery(state.query, force: true)
+    }
+
+    /// Called whenever the launcher becomes visible. The index service performs
+    /// a cheap root metadata check and only rescans application directories that
+    /// changed, so newly installed apps appear without slowing down the panel.
+    func refreshApplications() {
+        refreshApplications(force: false, showsInitialIndexingState: false)
+    }
+
+    func moveSelection(by offset: Int) {
+        guard resultCount > 0 else { return }
+        if offset > 0,
+           state.selectedIndex == resultCount - 1,
+           case .applications(let actions, _, let hasMore, _) = state.content,
+           hasMore {
+            let nextSelection = resultCount
+            applicationResultLimit += 8
+            let items = Array(rankedApplications.prefix(applicationResultLimit))
+            var next = state
+            next.content = .applications(
+                actions: actions,
+                items: items,
+                hasMore: items.count < rankedApplications.count,
+                isSearching: false
+            )
+            next.selectedIndex = min(nextSelection, actions.count + items.count - 1)
+            state = next
+            return
+        }
+
+        var next = state
+        next.selectedIndex = min(max(0, state.selectedIndex + offset), resultCount - 1)
+        state = next
+    }
+
+    func moveUnicodeSelection(rows: Int, columns: Int) {
+        guard isUnicodeQuery, resultCount > 0, columns > 0 else { return }
+        let currentColumn = state.selectedIndex % columns
+        let currentRow = state.selectedIndex / columns
+        let rowCount = (resultCount + columns - 1) / columns
+        let targetRow = min(max(0, currentRow + rows), rowCount - 1)
+        selectedIndex = min(targetRow * columns + currentColumn, resultCount - 1)
+    }
+
+    @discardableResult
+    func activateSelection() -> Bool {
+        switch state.content {
+        case .systemOperations(let operations):
+            guard operations.indices.contains(state.selectedIndex) else { return false }
+            usageStore.record("system:\(operations[state.selectedIndex].rawValue)")
+            recordSuccessfulActivation()
+            onPerformSystemOperation?(operations[state.selectedIndex])
+            return true
+        case .fallback(let query, let actions):
+            guard actions.indices.contains(state.selectedIndex) else { return false }
+            let action = actions[state.selectedIndex]
+            usageStore.record("fallback:\(action.rawValue)")
+            switch action {
+            case .googleSearch:
+                guard let url = action.destinationURL(for: query) else { return false }
+                recordSuccessfulActivation()
+                NSWorkspace.shared.open(url)
+                return true
+            case .askAI:
+                startAIAnswer(query: query)
+                return false
+            }
+        case .aiAnswer(_, _, let result, _, let isLoading):
+            guard !isLoading, !result.isEmpty else { return false }
+            recordSuccessfulActivation()
+            copyText(result)
+            return true
+        case .unicode(_, let items, _):
+            guard items.indices.contains(state.selectedIndex) else { return false }
+            recordSuccessfulActivation()
+            copyText(items[state.selectedIndex].symbol)
+            return true
+        case .currency(let result?, _, _):
+            recordSuccessfulActivation()
+            copyText(result)
+            return true
+        case .calculation(let result):
+            recordSuccessfulActivation()
+            copyText(result)
+            return true
+        case .applications(let actions, let items, _, _):
+            if actions.indices.contains(state.selectedIndex) {
+                let action = actions[state.selectedIndex]
+                usageStore.record("quick:\(action.rawValue)")
+                switch action {
+                case .note:
+                    recordSuccessfulActivation()
+                    onOpenNote?()
+                    return true
+                case .clipboard:
+                    switchMode(.clipboard)
+                    return false
+                case .translation:
+                    recordSuccessfulActivation()
+                    onOpenTranslation?()
+                    return true
+                }
+            }
+            let applicationOffset = state.selectedIndex - actions.count
+            guard items.indices.contains(applicationOffset) else { return false }
+            let application = items[applicationOffset]
+            usageStore.record("app:\(application.id)")
+            recordSuccessfulActivation()
+            applicationIndex.launch(application)
+            return true
+        case .clipboard(let items):
+            guard items.indices.contains(state.selectedIndex) else { return false }
+            recordSuccessfulActivation()
+            clipboard.copy(items[state.selectedIndex])
+            return true
+        case .idle, .currency, .graph:
+            return false
+        }
+    }
+
+    func selectedClipboardItem() -> ClipboardItem? {
+        guard case .clipboard(let items) = state.content,
+              items.indices.contains(state.selectedIndex) else { return nil }
+        return items[state.selectedIndex]
+    }
+
+    var clipboardHistoryCount: Int { clipboard.items.count }
+    var clipboardStorageError: String? { clipboard.storageError }
+
+    func removeSelectedClipboardItem() {
+        guard let item = selectedClipboardItem() else { return }
+        clipboard.remove(item)
+    }
+
+    func removeClipboardItem(_ item: ClipboardItem) {
+        clipboard.remove(item)
+    }
+
+    func clearClipboardHistory() {
+        clipboard.clear()
+    }
+
+    func revealClipboardStorage() {
+        clipboard.revealStorage()
+    }
+
+    nonisolated static func applicationScore(
+        query: String,
+        application: ApplicationRecord
+    ) -> Int? {
+        if let nameScore = FuzzyMatcher.score(query: query, candidate: application.name) {
+            return 20_000 + nameScore
+        }
+        return application.bundleIdentifier
+            .flatMap { FuzzyMatcher.contiguousScore(query: query, candidate: $0) }
+            .map { $0 - 500 }
+    }
+
+    static func rankApplicationsForPresentation(
+        query: String,
+        searchedResults: [ApplicationRecord],
+        usageStore: LauncherUsageStore
+    ) -> [ApplicationRecord] {
+        let nameMatches = searchedResults.filter {
+            FuzzyMatcher.score(query: query, candidate: $0.name) != nil
+        }
+        let bundleOnlyMatches = searchedResults.filter {
+            FuzzyMatcher.score(query: query, candidate: $0.name) == nil
+        }
+        return usageStore.sorted(nameMatches) { "app:\($0.id)" }
+            + usageStore.sorted(bundleOnlyMatches) { "app:\($0.id)" }
     }
 
     nonisolated static func isNoteQuery(_ query: String) -> Bool {
         LauncherQuickAction.matching(query).contains(.note)
+    }
+
+    private func processQuery(
+        _ newQuery: String,
+        force: Bool = false,
+        recordsMetrics: Bool = true
+    ) {
+        guard force || newQuery != state.query else { return }
+        let oldState = state
+        cancelPendingWork()
+        applicationResultLimit = 8
+
+        let trimmedQuery = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if recordsMetrics {
+            if oldState.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !trimmedQuery.isEmpty {
+                experienceMetrics?.markFirstInput()
+            }
+            if trimmedQuery.isEmpty {
+                experienceMetrics?.cancelActiveQuery()
+                metricsQueryToken = nil
+                metricsQueryText = ""
+            } else {
+                metricsQueryToken = experienceMetrics?.beginQuery()
+                metricsQueryText = newQuery
+            }
+        }
+
+        if oldState.mode == .clipboard {
+            publishClipboard(query: newQuery)
+            return
+        }
+
+        guard !trimmedQuery.isEmpty else {
+            rankedApplications = []
+            state = LauncherState(query: newQuery, mode: .apps, selectedIndex: 0, content: .idle)
+            return
+        }
+
+        switch LauncherQueryClassifier.classify(newQuery) {
+        case .systemOperations(let operations):
+            rankedApplications = []
+            let rankedOperations = usageStore.sorted(operations) { "system:\($0.rawValue)" }
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .systemOperations(rankedOperations)
+            )
+
+        case .applications(let actions):
+            let rankedActions = usageStore.sorted(actions) { "quick:\($0.rawValue)" }
+            let previousItems: [ApplicationRecord]
+            if case .applications(_, let items, _, _) = oldState.content {
+                previousItems = items
+            } else {
+                previousItems = []
+            }
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .applications(
+                    actions: rankedActions,
+                    items: previousItems,
+                    hasMore: false,
+                    isSearching: true
+                )
+            )
+            guard !isIndexing else { return }
+            startApplicationSearch(query: newQuery, actions: rankedActions)
+
+        case .calculation(let result):
+            rankedApplications = []
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .calculation(result)
+            )
+
+        case .graph(let expression, let error):
+            rankedApplications = []
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .graph(
+                    expression: expression,
+                    plot: nil,
+                    error: error,
+                    isLoading: expression != nil
+                )
+            )
+            if let expression {
+                startGraphPlot(expression, requestedText: newQuery)
+            }
+
+        case .unicode(let unicodeQuery):
+            rankedApplications = []
+            let previousItems: [UnicodeSymbol]
+            if case .unicode(_, let items, _) = oldState.content {
+                previousItems = items
+            } else {
+                previousItems = []
+            }
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .unicode(query: unicodeQuery, items: previousItems, isSearching: true)
+            )
+            startUnicodeSearch(query: unicodeQuery, requestedText: newQuery)
+
+        case .currency(let conversion):
+            rankedApplications = []
+            state = LauncherState(
+                query: newQuery,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .currency(result: nil, error: nil, isLoading: true)
+            )
+            startCurrencyConversion(conversion, requestedText: newQuery)
+        }
+    }
+
+    private func startApplicationSearch(query: String, actions: [LauncherQuickAction]) {
+        applicationSearchTask = Task { [weak self] in
+            guard let self else { return }
+            let searchedResults = await applicationSearch.search(query)
+            guard !Task.isCancelled,
+                  state.mode == .apps,
+                  state.query == query else { return }
+            let results = Self.rankApplicationsForPresentation(
+                query: query,
+                searchedResults: searchedResults,
+                usageStore: usageStore
+            )
+            rankedApplications = results
+            if actions.isEmpty, results.isEmpty {
+                let fallbackActions = usageStore.sorted(LauncherFallbackAction.allCases) {
+                    "fallback:\($0.rawValue)"
+                }
+                state = LauncherState(
+                    query: query,
+                    mode: .apps,
+                    selectedIndex: 0,
+                    content: .fallback(query: query, actions: fallbackActions)
+                )
+                return
+            }
+            let items = Array(results.prefix(applicationResultLimit))
+            var next = state
+            next.selectedIndex = 0
+            next.content = .applications(
+                actions: actions,
+                items: items,
+                hasMore: items.count < results.count,
+                isSearching: false
+            )
+            state = next
+        }
+    }
+
+    private func startAIAnswer(query: String) {
+        guard let settings else {
+            state = LauncherState(
+                query: query,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .aiAnswer(
+                    provider: .openAI,
+                    model: "",
+                    result: "",
+                    error: "无法读取 AI Provider 设置",
+                    isLoading: false
+                )
+            )
+            return
+        }
+
+        let provider = settings.provider
+        let model = settings.model
+        let apiKey = settings.apiKeyForCurrentProvider()
+        aiAnswerTask?.cancel()
+        aiStreamBuffer = ""
+        lastAIStreamPublish = .distantPast
+        state = LauncherState(
+            query: query,
+            mode: .apps,
+            selectedIndex: 0,
+            content: .aiAnswer(
+                provider: provider,
+                model: model,
+                result: "",
+                error: nil,
+                isLoading: true
+            )
+        )
+
+        aiAnswerTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let answer = try await aiService.answer(
+                    query: query,
+                    provider: provider,
+                    model: model,
+                    apiKey: apiKey,
+                    onDelta: { [weak self] delta in
+                        self?.receiveAIStreamDelta(
+                            delta,
+                            query: query,
+                            provider: provider,
+                            model: model
+                        )
+                    }
+                )
+                guard !Task.isCancelled, state.query == query else { return }
+                state = LauncherState(
+                    query: query,
+                    mode: .apps,
+                    selectedIndex: 0,
+                    content: .aiAnswer(
+                        provider: provider,
+                        model: model,
+                        result: answer,
+                        error: nil,
+                        isLoading: false
+                    )
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard state.query == query else { return }
+                state = LauncherState(
+                    query: query,
+                    mode: .apps,
+                    selectedIndex: 0,
+                    content: .aiAnswer(
+                        provider: provider,
+                        model: model,
+                        result: aiStreamBuffer,
+                        error: error.localizedDescription,
+                        isLoading: false
+                    )
+                )
+            }
+        }
+    }
+
+    private func receiveAIStreamDelta(
+        _ delta: String,
+        query: String,
+        provider: AIProvider,
+        model: String
+    ) {
+        guard state.query == query, !Task.isCancelled else { return }
+        let isFirstChunk = aiStreamBuffer.isEmpty
+        aiStreamBuffer.append(delta)
+        let now = Date()
+        guard isFirstChunk
+                || delta.contains("\n")
+                || now.timeIntervalSince(lastAIStreamPublish) >= 0.035
+        else { return }
+
+        lastAIStreamPublish = now
+        var next = state
+        next.content = .aiAnswer(
+            provider: provider,
+            model: model,
+            result: aiStreamBuffer,
+            error: nil,
+            isLoading: true
+        )
+        state = next
+    }
+
+    private func refreshApplications(
+        force: Bool,
+        showsInitialIndexingState: Bool
+    ) {
+        guard applicationRefreshTask == nil else { return }
+        if showsInitialIndexingState { isIndexing = true }
+
+        applicationRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            let loaded = await applicationIndex.load(force: force)
+            guard !Task.isCancelled else {
+                applicationRefreshTask = nil
+                return
+            }
+
+            let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+            let needsReplacement = loaded != indexedApplications
+                || running != indexedRunningBundleIdentifiers
+
+            if needsReplacement {
+                let sorted = await applicationSearch.replaceApplications(
+                    loaded,
+                    runningBundleIdentifiers: running
+                )
+                guard !Task.isCancelled else {
+                    applicationRefreshTask = nil
+                    return
+                }
+                indexedApplications = loaded
+                indexedRunningBundleIdentifiers = running
+                rankedApplications = sorted
+            }
+
+            isIndexing = false
+            applicationRefreshTask = nil
+            if needsReplacement {
+                // Mark indexing complete before replaying text entered during
+                // startup. Otherwise the replay exits at the indexing guard and
+                // the user's first query remains permanently unresolved.
+                processQuery(state.query, force: true, recordsMetrics: false)
+            }
+        }
+    }
+
+    private func startUnicodeSearch(query: UnicodeSearchQuery, requestedText: String) {
+        let nativeLanguage = settings?.nativeLanguage ?? .simplifiedChinese
+        unicodeSearchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, let self else { return }
+            let results = await UnicodeSearchIndex.shared.search(
+                query,
+                nativeLanguage: nativeLanguage,
+                limit: 64
+            )
+            guard !Task.isCancelled, state.query == requestedText else { return }
+            var next = state
+            next.selectedIndex = 0
+            next.content = .unicode(query: query, items: results, isSearching: false)
+            state = next
+        }
+    }
+
+    private func startGraphPlot(_ expression: MathExpression, requestedText: String) {
+        graphTask = Task { [weak self] in
+            guard let plot = await FunctionPlotter.plot(expression),
+                  !Task.isCancelled,
+                  let self,
+                  state.query == requestedText else { return }
+            var next = state
+            next.content = .graph(
+                expression: expression,
+                plot: plot,
+                error: nil,
+                isLoading: false
+            )
+            state = next
+        }
+    }
+
+    private func startCurrencyConversion(_ conversion: CurrencyQuery, requestedText: String) {
+        currencyTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(240))
+            guard !Task.isCancelled, let self else { return }
+            do {
+                let result = try await currencyConverter.convert(conversion)
+                guard !Task.isCancelled, state.query == requestedText else { return }
+                var next = state
+                next.content = .currency(result: result, error: nil, isLoading: false)
+                state = next
+            } catch {
+                guard !Task.isCancelled, state.query == requestedText else { return }
+                var next = state
+                next.content = .currency(result: nil, error: error.localizedDescription, isLoading: false)
+                state = next
+            }
+        }
+    }
+
+    private func publishClipboard(query: String) {
+        let items = Array(clipboard.filtered(by: query).prefix(7))
+        state = LauncherState(
+            query: query,
+            mode: .clipboard,
+            selectedIndex: 0,
+            content: .clipboard(items)
+        )
+    }
+
+    private func cancelPendingWork() {
+        applicationSearchTask?.cancel()
+        currencyTask?.cancel()
+        graphTask?.cancel()
+        unicodeSearchTask?.cancel()
+        aiAnswerTask?.cancel()
+    }
+
+    private func recordSettledQueryIfNeeded() {
+        guard let token = metricsQueryToken,
+              state.query == metricsQueryText,
+              state.content.isSettledForExperienceMetrics else { return }
+        experienceMetrics?.resolveQuery(
+            token: token,
+            producedResults: state.content.producedResultsForExperienceMetrics
+        )
+        metricsQueryToken = nil
+        metricsQueryText = ""
+    }
+
+    private func recordSuccessfulActivation() {
+        experienceMetrics?.completeLauncherSession()
     }
 
     private func copyText(_ text: String) {

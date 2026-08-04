@@ -65,6 +65,29 @@ final class MathExpressionTests: XCTestCase {
         XCTAssertEqual(expression.evaluate(x: -9), 2, accuracy: 0.000_001)
     }
 
+    func testAcceptsFunctionNotationAndOtherDependentVariables() throws {
+        let shorthand = try XCTUnwrap(MathExpression("fx=2x+1"))
+        XCTAssertEqual(shorthand.displayEquation, "f(x) = 2x+1")
+        XCTAssertEqual(shorthand.evaluate(x: 3), 7, accuracy: 0.000_001)
+
+        let z = try XCTUnwrap(MathExpression("z=x+1"))
+        XCTAssertEqual(z.displayEquation, "z = x+1")
+        XCTAssertEqual(z.evaluate(x: 3), 4, accuracy: 0.000_001)
+    }
+
+    func testAcceptsDependentVariableOnTheRight() throws {
+        let expression = try XCTUnwrap(MathExpression("6x^2+x=y"))
+        XCTAssertEqual(expression.displayEquation, "y = 6x^2+x")
+        XCTAssertEqual(expression.evaluate(x: 2), 26, accuracy: 0.000_001)
+    }
+
+    func testRecognizesOnlyFunctionLikeEquationsAsCandidates() {
+        XCTAssertTrue(MathExpression.isFunctionCandidate("f(x)=sinx"))
+        XCTAssertTrue(MathExpression.isFunctionCandidate("6x^2+x=y"))
+        XCTAssertFalse(MathExpression.isFunctionCandidate("2+2=4"))
+        XCTAssertFalse(MathExpression.isFunctionCandidate("x=2"))
+    }
+
     func testInvalidExpressionFails() {
         XCTAssertNil(MathExpression("y=sin("))
         XCTAssertNil(MathExpression("sinx"))

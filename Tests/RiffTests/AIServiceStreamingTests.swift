@@ -2,11 +2,19 @@ import XCTest
 @testable import Riff
 
 final class AIServiceStreamingTests: XCTestCase {
-    func testTranslationPromptRequiresExactLineBreakPreservation() {
+    func testGeneralAnswerPromptKeepsTheUserRequestAndLanguageInstruction() {
+        let prompt = AIService.answerPrompt(query: "解释稀疏矩阵")
+
+        XCTAssertTrue(prompt.contains("same language as the request"))
+        XCTAssertTrue(prompt.contains("<request>\n解释稀疏矩阵\n</request>"))
+    }
+
+    func testTranslationPromptUsesMarkdownParagraphSemantics() {
         let source = "First paragraph.\n\nSecond paragraph."
         let prompt = AIService.translationPrompt(text: source, targetLanguage: "Simplified Chinese")
 
-        XCTAssertTrue(prompt.contains("Preserve every paragraph break and line break exactly"))
+        XCTAssertTrue(prompt.contains("preserve blank-line paragraph breaks"))
+        XCTAssertTrue(prompt.contains("do not introduce hard line breaks inside ordinary prose paragraphs"))
         XCTAssertTrue(prompt.contains("<source>\n\(source)\n</source>"))
     }
 
@@ -34,6 +42,19 @@ final class AIServiceStreamingTests: XCTestCase {
         XCTAssertEqual(payload["stream"] as? Bool, true)
         XCTAssertEqual(reasoning["enabled"], false)
         XCTAssertEqual(reasoning["exclude"], true)
+    }
+
+    func testOpenRouterCompletionUsesLowLatencyBoundedGeneration() {
+        let payload = AIService.openRouterPayload(
+            prompt: "Continue",
+            model: "small-model",
+            maxOutputTokens: 96,
+            temperature: 0.1
+        )
+
+        XCTAssertEqual(payload["max_tokens"] as? Int, 96)
+        XCTAssertEqual(payload["temperature"] as? Double, 0.1)
+        XCTAssertEqual(payload["stream"] as? Bool, true)
     }
 
     func testExtractsGeminiDeltaAndIgnoresThoughtParts() throws {

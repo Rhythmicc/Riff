@@ -41,4 +41,22 @@ final class FuzzyMatcherTests: XCTestCase {
         )
         XCTAssertNotNil(AppModel.applicationScore(query: "vscode", application: code))
     }
+
+    func testApplicationNameScoreOutranksAnExactBundleIdentifierScore() throws {
+        let nameMatch = ApplicationRecord(
+            url: URL(fileURLWithPath: "/Applications/Cool Draft Xylophone.app"),
+            name: "Cool Draft Xylophone",
+            bundleIdentifier: "dev.example.editor"
+        )
+        let bundleOnlyMatch = ApplicationRecord(
+            url: URL(fileURLWithPath: "/Applications/Utility.app"),
+            name: "Utility",
+            bundleIdentifier: "cdx"
+        )
+
+        let nameScore = try XCTUnwrap(AppModel.applicationScore(query: "cdx", application: nameMatch))
+        let bundleScore = try XCTUnwrap(AppModel.applicationScore(query: "cdx", application: bundleOnlyMatch))
+
+        XCTAssertGreaterThan(nameScore, bundleScore)
+    }
 }

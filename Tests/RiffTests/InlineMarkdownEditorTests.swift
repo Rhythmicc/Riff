@@ -56,6 +56,39 @@ final class InlineMarkdownEditorTests: XCTestCase {
         XCTAssertGreaterThan(data.count, 1_000)
     }
 
+    func testEditorKeepsMarkedTextVisibleAndCommitsItToTheBinding() throws {
+        var source = ""
+        let controller = MaterialPanelController(size: NSSize(width: 640, height: 420))
+        controller.install(InlineMarkdownEditor(
+            text: Binding(
+                get: { source },
+                set: { source = $0 }
+            ),
+            documentID: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-FFFFFFFFFFFF")!
+        ))
+        defer { controller.panel.orderOut(nil) }
+
+        controller.showCentered()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let textView = try XCTUnwrap(firstTextView(in: controller.panel.contentView!))
+        XCTAssertTrue(controller.panel.makeFirstResponder(textView))
+
+        textView.setMarkedText(
+            "ni",
+            selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertTrue(textView.hasMarkedText())
+        XCTAssertEqual(textView.string, "ni")
+
+        textView.insertText("你", replacementRange: textView.markedRange())
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertFalse(textView.hasMarkedText())
+        XCTAssertEqual(textView.string, "你")
+        XCTAssertEqual(source, "你")
+    }
+
     private func firstTextView(in view: NSView) -> NSTextView? {
         if let textView = view as? NSTextView { return textView }
         for subview in view.subviews {

@@ -18,8 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = SettingsStore()
     private let shortcuts = ShortcutStore()
     private let clipboard = ClipboardStore()
+    private let systemOperationExecutor = SystemOperationExecutor()
+    private let experienceMetrics = ExperienceMetricsStore()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard claimSingleRunningInstance() else { return }
+
         DiagnosticLogger.shared.log(
             "app",
             "didFinishLaunching debug=\(_isDebugAssertConfiguration()) axTrusted=\(SelectionReader.isAccessibilityTrusted)"
@@ -27,14 +31,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         configureMainMenu()
 
-        let model = AppModel(clipboard: clipboard)
+        let model = AppModel(
+            clipboard: clipboard,
+            settings: settings,
+            experienceMetrics: experienceMetrics
+        )
         noteModel = NoteModel()
         translationModel = TranslationModel(settings: settings)
 
-        noteController = NotePanelController(model: noteModel)
-        model.onOpenNote = { [weak self] in self?.noteController.show() }
+        noteController = NotePanelController(model: noteModel, settings: settings)
+        model.onOpenNote = { [weak self] in self?.openNoteFromLauncher() }
         model.onOpenTranslation = { [weak self] in self?.openTranslationFromLauncher() }
-        settingsController = SettingsPanelController(settings: settings, shortcuts: shortcuts)
+        model.onPerformSystemOperation = { [weak self] operation in
+            DispatchQueue.main.async {
+                self?.systemOperationExecutor.perform(operation)
+            }
+        }
+        settingsController = SettingsPanelController(
+            settings: settings,
+            shortcuts: shortcuts,
+            experienceMetrics: experienceMetrics
+        )
         translationController = TranslationPanelController(
             model: translationModel,
             settings: settings,
@@ -42,8 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         launcherController = LauncherPanelController(
             model: model,
-            showNote: { [weak self] in self?.noteController.toggle() },
-            showSettings: { [weak self] in self?.settingsController.show() }
+            showNote: { [weak self] in self?.openNoteFromLauncher() },
+            showSettings: { [weak self] in self?.settingsController.show() },
+            experienceMetrics: experienceMetrics
         )
 
         configureStatusItem()
@@ -57,8 +75,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Launch Services normally keeps an application single-instance, but a
+    /// development build can be started directly while an installed copy is
+    /// already running. Both processes would then register the same global
+    /// shortcuts and present visually overlapping panels. Yield to the older
+    /// instance before installing any monitors or UI.
+    private func claimSingleRunningInstance() -> Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return true }
+
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        guard let existing = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first(where: { $0.processIdentifier != currentPID && !$0.isTerminated })
+        else {
+            return true
+        }
+
+        existing.activate(options: [])
+        NSApp.terminate(nil)
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         noteModel?.flush()
+        clipboard.flush()
+        experienceMetrics.flush()
     }
 
     private func configureHotKeys() {
@@ -129,6 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         if SelectionReader.isAccessibilityTrusted, shortcutMonitor?.isActive != true {
             configureHotKeys()
+        }
+        if launcherController?.panel.isVisible == true {
+            launcherController.restoreSearchFocusAfterActivation()
         }
     }
 
@@ -251,6 +295,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func openNoteFromLauncher() {
+        // The launcher is intentionally a nonactivating panel. Remove it before
+        // presenting the editor so the note window becomes the sole key-window
+        // candidate and the system input method can bind to its NSTextView.
+        launcherController?.dismiss()
+        noteController.show()
+    }
+
     private func perform(_ action: ShortcutAction) {
         let settingsIsKey = settingsController?.panel.isKeyWindow == true
         DiagnosticLogger.shared.log("shortcut", "perform action=\(action.rawValue) settingsIsKey=\(settingsIsKey)")
@@ -271,7 +323,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openTranslation() { showTranslation() }
     @objc private func toggleNote() { noteController.toggle() }
     @objc private func openSettings() { settingsController.show() }
-    @objc private func closeCurrentWindow() { NSApp.keyWindow?.orderOut(nil) }
+    @objc private func closeCurrentWindow() {
+        if NSApp.keyWindow === launcherController?.panel {
+            launcherController.dismiss()
+        } else {
+            NSApp.keyWindow?.orderOut(nil)
+        }
+    }
     @objc private func quit() { NSApp.terminate(nil) }
 
 #if DEBUG
