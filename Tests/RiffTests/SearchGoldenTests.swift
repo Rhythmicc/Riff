@@ -19,7 +19,12 @@ final class SearchGoldenTests: XCTestCase {
     private func makeSearch(
         _ applications: [ApplicationRecord]
     ) async -> ApplicationSearch {
-        let search = ApplicationSearch()
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riff-search-cache-\(UUID().uuidString).json")
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: cacheURL)
+        }
+        let search = ApplicationSearch(cacheURL: cacheURL)
         _ = await search.replaceApplications(applications, runningBundleIdentifiers: [])
         return search
     }

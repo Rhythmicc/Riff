@@ -116,12 +116,42 @@ struct ChatView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LauncherTheme.secondary)
+                TextField(
+                    "搜索对话",
+                    text: Binding(
+                        get: { model.searchQuery },
+                        set: { model.updateSearch($0) }
+                    )
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 12.5))
+                if !model.searchQuery.isEmpty {
+                    Button {
+                        model.updateSearch("")
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(LauncherTheme.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+
             HStack {
                 Text("对话")
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(LauncherTheme.secondary)
                 Spacer()
-                Text("\(model.conversations.count)")
+                Text(
+                    model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? "\(model.conversations.count)"
+                        : "\(model.filteredConversations.count)/\(model.conversations.count)"
+                )
                     .font(.system(size: 11))
                     .foregroundStyle(LauncherTheme.secondary.opacity(0.7))
             }
@@ -129,7 +159,7 @@ struct ChatView: View {
             .padding(.vertical, 10)
 
             List(selection: conversationSelection) {
-                ForEach(model.conversations) { conversation in
+                ForEach(model.filteredConversations) { conversation in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(conversation.title)
                             .font(.system(size: 12.5, weight: .medium))

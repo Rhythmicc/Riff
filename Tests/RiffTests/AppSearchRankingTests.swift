@@ -3,6 +3,21 @@ import XCTest
 
 @MainActor
 final class AppSearchRankingTests: XCTestCase {
+    private var cacheURL: URL!
+
+    override func setUpWithError() throws {
+        cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riff-search-cache-\(UUID().uuidString).json")
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: cacheURL)
+    }
+
+    private func makeSearch() -> ApplicationSearch {
+        ApplicationSearch(cacheURL: cacheURL)
+    }
+
     private func makeApplication(
         path: String,
         name: String,
@@ -41,7 +56,7 @@ final class AppSearchRankingTests: XCTestCase {
                 aliases: ["wechat", "weixin"]
             )
         ]
-        let search = ApplicationSearch()
+        let search = makeSearch()
         _ = await search.replaceApplications(applications, runningBundleIdentifiers: [])
 
         let results = await search.search("we")
@@ -102,7 +117,7 @@ final class AppSearchRankingTests: XCTestCase {
                 aliases: ["mail", "邮箱"]
             )
         ]
-        let search = ApplicationSearch()
+        let search = makeSearch()
         _ = await search.replaceApplications(applications, runningBundleIdentifiers: [])
 
         XCTAssertTrue(SystemOperation.matching("ma").isEmpty)

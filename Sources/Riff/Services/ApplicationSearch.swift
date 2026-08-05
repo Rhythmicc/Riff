@@ -2,6 +2,14 @@ import Foundation
 
 actor ApplicationSearch {
     private var entries: [SearchCandidate] = []
+    private let candidateCache: SearchCandidateCache
+
+    init(
+        cacheURL: URL = RiffPaths.applicationSupportDirectory
+            .appendingPathComponent("search-candidates.json")
+    ) {
+        candidateCache = SearchCandidateCache(url: cacheURL)
+    }
 
     func replaceApplications(
         _ applications: [ApplicationRecord],
@@ -13,7 +21,19 @@ actor ApplicationSearch {
             if lhsRunning != rhsRunning { return lhsRunning }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
-        entries = sorted.map(SearchCandidateBuilder.build)
+        entries = sorted.map { application in
+            let cached = candidateCache.fields(
+                for: application,
+                bundleModificationDate: Self.bundleModificationDate(for: application.url)
+            ) {
+                SearchCandidateBuilder.cachedFields(for: application)
+            }
+            return SearchCandidateBuilder.build(
+                for: application,
+                cachedFields: cached
+            )
+        }
+        candidateCache.persistIfNeeded()
         return sorted
     }
 
@@ -36,5 +56,10 @@ actor ApplicationSearch {
                 == .orderedAscending
         }
         return matches.map(\.application)
+    }
+
+    private static func bundleModificationDate(for url: URL) -> TimeInterval? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        return values?.contentModificationDate?.timeIntervalSince1970
     }
 }

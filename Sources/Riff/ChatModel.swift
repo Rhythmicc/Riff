@@ -63,12 +63,21 @@ final class ChatModel: ObservableObject {
     @Published private(set) var selectedConversationID: UUID
     @Published private(set) var isStreaming = false
     @Published private(set) var streamError: String?
+    @Published var searchQuery = ""
+    @Published private(set) var searchResultIDs: Set<UUID> = []
 
     private let settings: SettingsStore
     private let noteModel: NoteModel?
     private let database: ChatDatabase?
     private var saveTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
+    private var loadedMessageIDs: Set<UUID> = []
+
+    /// Context window limits for what is sent to the model. Bounded history
+    /// keeps latency and token cost from growing linearly with conversation
+    /// length; the first user message is kept as a topic anchor.
+    static let maximumContextMessages = 30
+    static let maximumContextCharacters = 12_000
 
     init(settings: SettingsStore, noteModel: NoteModel? = nil, directory: URL? = nil) {
         self.settings = settings
@@ -84,7 +93,7 @@ final class ChatModel: ObservableObject {
         database = openedDatabase
 
         if let openedDatabase,
-           let stored = try? openedDatabase.loadAll(),
+           let stored = try? openedDatabase.loadConversationSummaries(),
            !stored.isEmpty {
             conversations = stored
             let storedSelection = try? openedDatabase.selectedConversationID()
@@ -95,8 +104,10 @@ final class ChatModel: ObservableObject {
             let initial = ChatConversation()
             conversations = [initial]
             selectedConversationID = initial.id
+            loadedMessageIDs.insert(initial.id)
             saveImmediately()
         }
+        loadMessagesIfNeeded(conversationID: selectedConversationID)
     }
 
     var selectedConversation: ChatConversation? {
@@ -115,8 +126,25 @@ final class ChatModel: ObservableObject {
         settings.provider.defaultModel
     }
 
+    var filteredConversations: [ChatConversation] {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return conversations }
+        return conversations.filter { searchResultIDs.contains($0.id) }
+    }
+
+    func updateSearch(_ query: String) {
+        searchQuery = query
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchResultIDs = []
+            return
+        }
+        searchResultIDs = (try? database?.searchConversationIDs(matching: trimmed)) ?? []
+    }
+
     func select(_ conversation: ChatConversation) {
         selectedConversationID = conversation.id
+        loadMessagesIfNeeded(conversationID: conversation.id)
         scheduleSave()
     }
 
@@ -124,6 +152,7 @@ final class ChatModel: ObservableObject {
         let conversation = ChatConversation(model: settings.provider.defaultModel)
         conversations.insert(conversation, at: 0)
         selectedConversationID = conversation.id
+        loadedMessageIDs.insert(conversation.id)
         scheduleSave()
     }
 
@@ -131,10 +160,13 @@ final class ChatModel: ObservableObject {
         let deletedID = selectedConversationID
         conversations.removeAll { $0.id == selectedConversationID }
         if conversations.isEmpty {
-            conversations = [ChatConversation()]
+            let fresh = ChatConversation()
+            conversations = [fresh]
+            loadedMessageIDs.insert(fresh.id)
         }
         selectedConversationID = conversations[0].id
         try? database?.deleteConversation(id: deletedID)
+        loadMessagesIfNeeded(conversationID: selectedConversationID)
         scheduleSave()
     }
 
@@ -168,6 +200,7 @@ final class ChatModel: ObservableObject {
         )
         conversations.insert(conversation, at: 0)
         selectedConversationID = conversation.id
+        loadedMessageIDs.insert(conversation.id)
         scheduleSave()
         scheduleAITitleIfNeeded(conversationID: conversation.id, overwriteFallback: true)
         return conversation.id
@@ -190,7 +223,7 @@ final class ChatModel: ObservableObject {
 
         let conversationID = conversations[index].id
         let model = conversations[index].model
-        let history = conversations[index].messages
+        let history = Self.contextWindow(for: conversations[index].messages)
         let provider = settings.provider
         let apiKey = settings.apiKeyForCurrentProvider()
         let tavilyKey = settings.tavilyAPIKey()
@@ -365,9 +398,22 @@ final class ChatModel: ObservableObject {
     private func saveImmediately() {
         guard let database else { return }
         for conversation in conversations {
-            try? database.upsertConversation(conversation)
+            try? database.upsertConversation(
+                conversation,
+                includeMessages: loadedMessageIDs.contains(conversation.id)
+            )
         }
         try? database.setSelectedConversation(id: selectedConversationID)
+    }
+
+    private func loadMessagesIfNeeded(conversationID: UUID) {
+        guard !loadedMessageIDs.contains(conversationID),
+              let database,
+              let index = conversations.firstIndex(where: { $0.id == conversationID }),
+              let messages = try? database.loadMessages(conversationID: conversationID)
+        else { return }
+        conversations[index].messages = messages
+        loadedMessageIDs.insert(conversationID)
     }
 
     static func inferredTitle(from text: String) -> String? {
@@ -378,5 +424,22 @@ final class ChatModel: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
         return String(cleaned.prefix(24))
+    }
+
+    static func contextWindow(for messages: [ChatMessage]) -> [ChatMessage] {
+        var window = messages
+        if window.count > maximumContextMessages {
+            window = Array(window.suffix(maximumContextMessages))
+        }
+        var totalCharacters = window.reduce(0) { $0 + $1.content.count }
+        while window.count > 2, totalCharacters > maximumContextCharacters {
+            let removed = window.removeFirst()
+            totalCharacters -= removed.content.count
+        }
+        if let firstUser = messages.first(where: { $0.role == .user }),
+           !window.contains(where: { $0.id == firstUser.id }) {
+            return [firstUser] + window
+        }
+        return window
     }
 }

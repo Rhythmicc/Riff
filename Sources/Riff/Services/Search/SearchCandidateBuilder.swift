@@ -1,16 +1,39 @@
 import Foundation
 
 enum SearchCandidateBuilder {
-    static func build(for application: ApplicationRecord) -> SearchCandidate {
+    static func build(
+        for application: ApplicationRecord,
+        cachedFields: CachedSearchCandidateFields? = nil
+    ) -> SearchCandidate {
         let components = splitComponents(application.name)
+        let localizedNames = cachedFields?.localizedNames
+            ?? localizedNames(for: application.url)
+        let pinyinVariants = cachedFields?.pinyinVariants
+            ?? pinyinVariants(for: application.name)
         return SearchCandidate(
             application: application,
             components: components,
             initials: initials(of: components),
-            localizedNames: localizedNames(for: application.url),
-            pinyinVariants: pinyinVariants(for: application.name),
+            localizedNames: localizedNames,
+            pinyinVariants: pinyinVariants,
             aliases: application.bundleIdentifier.flatMap(AppAliasCatalog.aliases(for:)) ?? []
         )
+    }
+
+    /// Expensive bundle-derived fields, for the on-disk cache.
+    static func cachedFields(
+        for application: ApplicationRecord
+    ) -> CachedSearchCandidateFields {
+        CachedSearchCandidateFields(
+            bundleModificationDate: bundleModificationDate(for: application.url),
+            localizedNames: localizedNames(for: application.url),
+            pinyinVariants: pinyinVariants(for: application.name)
+        )
+    }
+
+    private static func bundleModificationDate(for url: URL) -> TimeInterval? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        return values?.contentModificationDate?.timeIntervalSince1970
     }
 
     /// Splits a display name on separators, camelCase transitions, and

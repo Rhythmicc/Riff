@@ -82,6 +82,18 @@ final class ChatDatabase {
     /// Loads every conversation with its messages, newest conversation first
     /// so reopening reproduces the in-memory ordering used by `ChatModel`.
     func loadAll() throws -> [ChatConversation] {
+        var conversations = try loadConversationSummaries()
+        for index in conversations.indices {
+            conversations[index].messages = try loadMessages(
+                conversationID: conversations[index].id
+            )
+        }
+        return conversations
+    }
+
+    /// Loads conversation metadata only, without messages. `ChatModel` uses
+    /// this at startup and loads messages lazily for the selected conversation.
+    func loadConversationSummaries() throws -> [ChatConversation] {
         let conversationStatement = try prepare("""
             SELECT id, title, model, provider, created_at, updated_at
             FROM conversations
@@ -107,15 +119,10 @@ final class ChatDatabase {
             ))
         }
         try checkCompletion(of: conversationStatement)
-
-        for index in conversations.indices {
-            let conversation = conversations[index]
-            conversations[index].messages = try loadMessages(conversationID: conversation.id)
-        }
         return conversations
     }
 
-    private func loadMessages(conversationID: UUID) throws -> [ChatMessage] {
+    func loadMessages(conversationID: UUID) throws -> [ChatMessage] {
         let statement = try prepare("""
             SELECT id, role, content, created_at
             FROM messages
@@ -145,11 +152,24 @@ final class ChatDatabase {
 
     /// Replaces one conversation and all of its messages atomically.
     func upsertConversation(_ conversation: ChatConversation) throws {
+        try upsertConversation(conversation, includeMessages: true)
+    }
+
+    func upsertConversation(
+        _ conversation: ChatConversation,
+        includeMessages: Bool
+    ) throws {
         try transaction {
             let conversationStatement = try prepare("""
-                INSERT OR REPLACE INTO conversations
+                INSERT INTO conversations
                     (id, title, model, provider, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    model = excluded.model,
+                    provider = excluded.provider,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at
                 """)
             defer { sqlite3_finalize(conversationStatement) }
             try bind(conversation.id.uuidString, to: conversationStatement, index: 1)
@@ -159,6 +179,8 @@ final class ChatDatabase {
             try bind(conversation.createdAt.timeIntervalSince1970, to: conversationStatement, index: 5)
             try bind(conversation.updatedAt.timeIntervalSince1970, to: conversationStatement, index: 6)
             try step(conversationStatement)
+
+            guard includeMessages else { return }
 
             let deleteStatement = try prepare(
                 "DELETE FROM messages WHERE conversation_id = ?"
@@ -213,8 +235,40 @@ final class ChatDatabase {
         return UUID(uuidString: value)
     }
 
+    /// Conversation ids whose title or any message content contains the query.
+    func searchConversationIDs(matching query: String) throws -> Set<UUID> {
+        let pattern = Self.likePattern(from: query)
+        let statement = try prepare("""
+            SELECT DISTINCT conversation_id FROM messages
+            WHERE content LIKE '%' || ? || '%' ESCAPE '\\'
+            UNION
+            SELECT id FROM conversations
+            WHERE title LIKE '%' || ? || '%' ESCAPE '\\'
+            """)
+        defer { sqlite3_finalize(statement) }
+        try bind(pattern, to: statement, index: 1)
+        try bind(pattern, to: statement, index: 2)
+
+        var ids = Set<UUID>()
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let value = text(statement, column: 0),
+               let id = UUID(uuidString: value) {
+                ids.insert(id)
+            }
+        }
+        try checkCompletion(of: statement)
+        return ids
+    }
+
     func checkpoint() {
         try? execute("PRAGMA wal_checkpoint(PASSIVE)")
+    }
+
+    private static func likePattern(from query: String) -> String {
+        query
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     private func transaction(_ operation: () throws -> Void) throws {

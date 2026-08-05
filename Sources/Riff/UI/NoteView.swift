@@ -83,34 +83,70 @@ struct NoteView: View {
     }
 
     private var sidebar: some View {
-        ScrollView {
-            LazyVStack(spacing: 5) {
-                ForEach(model.notes) { note in
-                    Button { model.select(note) } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(note.title.isEmpty ? "未命名笔记" : note.title)
-                                .font(.system(size: 13.5, weight: .semibold))
-                                .lineLimit(1)
-                            Text(note.summary)
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(LauncherTheme.secondary)
-                                .lineLimit(2)
-                            Text(note.updatedAt, style: .relative)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(LauncherTheme.secondary.opacity(0.78))
-                        }
-                        .foregroundStyle(LauncherTheme.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .riffSelectedSurface(note.id == model.selectedNoteID, cornerRadius: 10)
-                        .contentShape(Rectangle())
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LauncherTheme.secondary)
+                TextField("搜索笔记", text: $model.searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5))
+                if !model.searchQuery.isEmpty {
+                    Button {
+                        model.searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(LauncherTheme.secondary)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+
+            Divider().overlay(LauncherTheme.hairline)
+
+            ScrollView {
+                LazyVStack(spacing: 5) {
+                    ForEach(model.filteredNotes) { note in
+                        Button { model.select(note) } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 6) {
+                                    if note.isPinned {
+                                        Image(systemName: "pin.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(LauncherTheme.accent)
+                                    }
+                                    Text(note.title.isEmpty ? "未命名笔记" : note.title)
+                                        .font(.system(size: 13.5, weight: .semibold))
+                                        .lineLimit(1)
+                                }
+                                Text(note.summary)
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(LauncherTheme.secondary)
+                                    .lineLimit(2)
+                                Text(note.updatedAt, style: .relative)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(LauncherTheme.secondary.opacity(0.78))
+                            }
+                            .foregroundStyle(LauncherTheme.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .riffSelectedSurface(note.id == model.selectedNoteID, cornerRadius: 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(note.isPinned ? "取消固定" : "固定") {
+                                model.togglePin(id: note.id)
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+            }
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
         .background(LauncherTheme.sidebarSurface)
     }
 

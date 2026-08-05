@@ -114,4 +114,29 @@ final class ChatDatabaseTests: XCTestCase {
 
         XCTAssertEqual(try database.loadAll().map(\.title), ["新对话", "旧对话"])
     }
+
+    func testSearchConversationsMatchesTitleAndMessageContent() throws {
+        let (database, _) = try makeDatabase()
+        let first = makeConversation(
+            title: "北京天气",
+            model: "m",
+            messages: [ChatMessage(role: .user, content: "今天下雨吗")]
+        )
+        let second = makeConversation(
+            title: "代码评审",
+            model: "m",
+            messages: [ChatMessage(role: .user, content: "帮我看看这段 Swift")]
+        )
+        try database.upsertConversation(first)
+        try database.upsertConversation(second)
+
+        let byTitle = try database.searchConversationIDs(matching: "天气")
+        XCTAssertEqual(byTitle, [first.id])
+
+        let byContent = try database.searchConversationIDs(matching: "Swift")
+        XCTAssertEqual(byContent, [second.id])
+
+        let byEscapedPattern = try database.searchConversationIDs(matching: "100%")
+        XCTAssertTrue(byEscapedPattern.isEmpty)
+    }
 }

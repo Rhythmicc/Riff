@@ -124,4 +124,91 @@ final class ChatModelTests: XCTestCase {
         )
         XCTAssertEqual(model.selectedConversationID, id)
     }
+
+    func testContextWindowKeepsShortConversationUntouched() {
+        let messages = (0..<10).map { index in
+            ChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant, content: "消息 \(index)")
+        }
+
+        XCTAssertEqual(ChatModel.contextWindow(for: messages), messages)
+    }
+
+    func testContextWindowTrimsToMessageLimitAndKeepsFirstUserAnchor() {
+        let messages = (0..<50).map { index in
+            ChatMessage(
+                role: index == 0 ? .user : .assistant,
+                content: "第 \(index) 条消息"
+            )
+        }
+
+        let window = ChatModel.contextWindow(for: messages)
+
+        XCTAssertEqual(window.count, ChatModel.maximumContextMessages + 1)
+        XCTAssertEqual(window.first?.content, "第 0 条消息")
+        XCTAssertEqual(window.last?.content, "第 49 条消息")
+    }
+
+    func testContextWindowTrimsByCharacterBudget() {
+        let messages = (0..<40).map { index in
+            ChatMessage(role: .user, content: String(repeating: "字", count: 1_000))
+        }
+
+        let window = ChatModel.contextWindow(for: messages)
+
+        XCTAssertLessThan(window.count, messages.count)
+        XCTAssertEqual(window.first?.content, messages[0].content)
+        XCTAssertEqual(window.last?.content, messages[39].content)
+    }
+
+    func testMessagesLoadLazilyAndMetadataOnlySaveKeepsThem() throws {
+        let fixture = try makeFixture()
+        let settings = SettingsStore(defaults: fixture.defaults)
+        let model = ChatModel(settings: settings, directory: fixture.directory)
+        model.renameSelected("第一段")
+        _ = model.importInquiry(question: "问题A", answer: "回答A")
+        model.createConversation()
+        model.flush()
+
+        let reopened = ChatModel(settings: settings, directory: fixture.directory)
+        XCTAssertEqual(reopened.conversations.count, 3)
+        XCTAssertTrue(reopened.conversations[0].messages.isEmpty)
+        XCTAssertTrue(reopened.conversations[1].messages.isEmpty)
+
+        // Saving only the selected conversation's metadata must not wipe the
+        // unloaded conversation's messages.
+        reopened.flush()
+        let reopenedAgain = ChatModel(settings: settings, directory: fixture.directory)
+        let importedIndex = try XCTUnwrap(
+            reopenedAgain.conversations.firstIndex { $0.title == "问题A" }
+        )
+        XCTAssertTrue(reopenedAgain.conversations[importedIndex].messages.isEmpty)
+        reopenedAgain.select(reopenedAgain.conversations[importedIndex])
+        XCTAssertEqual(
+            reopenedAgain.conversations[importedIndex].messages.map(\.content),
+            ["问题A", "回答A"]
+        )
+    }
+
+    func testUpdateSearchFiltersConversationsByTitleAndContent() throws {
+        let fixture = try makeFixture()
+        let model = ChatModel(
+            settings: SettingsStore(defaults: fixture.defaults),
+            directory: fixture.directory
+        )
+        model.renameSelected("北京天气")
+        _ = model.importInquiry(question: "帮我看看这段 Swift", answer: "好的")
+        model.flush()
+
+        model.updateSearch("天气")
+        XCTAssertEqual(model.filteredConversations.map(\.title), ["北京天气"])
+
+        model.updateSearch("Swift")
+        XCTAssertEqual(model.filteredConversations.map(\.title), ["帮我看看这段 Swift"])
+
+        model.updateSearch("不存在的内容")
+        XCTAssertTrue(model.filteredConversations.isEmpty)
+
+        model.updateSearch("")
+        XCTAssertEqual(model.filteredConversations.count, 2)
+    }
 }

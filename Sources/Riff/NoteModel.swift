@@ -4,6 +4,7 @@ struct NoteDocument: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
     var text: String
+    var isPinned: Bool
     let createdAt: Date
     var updatedAt: Date
 
@@ -11,14 +12,30 @@ struct NoteDocument: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         title: String = "未命名笔记",
         text: String = "# 新笔记\n\n",
+        isPinned: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
         self.id = id
         self.title = title
         self.text = text
+        self.isPinned = isPinned
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, text, isPinned, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        text = try container.decode(String.self, forKey: .text)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 
     var summary: String {
@@ -38,6 +55,7 @@ final class NoteModel: ObservableObject {
 
     @Published private(set) var notes: [NoteDocument]
     @Published private(set) var selectedNoteID: UUID
+    @Published var searchQuery = ""
 
     private let archiveURL: URL
     private let legacyURL: URL
@@ -78,6 +96,31 @@ final class NoteModel: ObservableObject {
     }
 
     var selectedTitle: String { selectedNote?.title ?? "" }
+
+    var filteredNotes: [NoteDocument] {
+        let filtered: [NoteDocument]
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            filtered = notes
+        } else {
+            filtered = notes.filter { note in
+                note.title.localizedCaseInsensitiveContains(query)
+                    || note.text.localizedCaseInsensitiveContains(query)
+            }
+        }
+        return filtered.enumerated().sorted { lhs, rhs in
+            if lhs.element.isPinned != rhs.element.isPinned {
+                return lhs.element.isPinned
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    func togglePin(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].isPinned.toggle()
+        scheduleSave()
+    }
     var selectedText: String { selectedNote?.text ?? "" }
 
     func select(_ note: NoteDocument) {

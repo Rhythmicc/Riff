@@ -3,6 +3,11 @@ import XCTest
 @testable import Riff
 
 final class LauncherArchitectureTests: XCTestCase {
+    private static func temporaryCacheURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("riff-search-cache-\(UUID().uuidString).json")
+    }
+
     func testClassifierProducesOneExplicitIntent() {
         if case .calculation(let result) = LauncherQueryClassifier.classify("12 * (8 + 2)") {
             XCTAssertEqual(result, "120")
@@ -94,7 +99,7 @@ final class LauncherArchitectureTests: XCTestCase {
     }
 
     func testApplicationSearchUsesPreindexedCandidates() async {
-        let search = ApplicationSearch()
+        let search = ApplicationSearch(cacheURL: Self.temporaryCacheURL())
         let safari = ApplicationRecord(
             url: URL(fileURLWithPath: "/Applications/Safari.app"),
             name: "Safari",
@@ -115,7 +120,7 @@ final class LauncherArchitectureTests: XCTestCase {
     }
 
     func testApplicationNameMatchesAlwaysRankAheadOfBundleOnlyMatches() async {
-        let search = ApplicationSearch()
+        let search = ApplicationSearch(cacheURL: Self.temporaryCacheURL())
         let nameMatch = ApplicationRecord(
             url: URL(fileURLWithPath: "/Applications/Cool Draft Xylophone.app"),
             name: "Cool Draft Xylophone",
