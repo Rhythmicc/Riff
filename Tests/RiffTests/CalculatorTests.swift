@@ -28,21 +28,17 @@ final class CalculatorTests: XCTestCase {
 }
 
 final class DoubleTapDetectorTests: XCTestCase {
-    func testTriggersInsideThreshold() {
+    func testTriggersInsideThresholdButNotForSlowOrResetTaps() {
         var detector = DoubleTapDetector(maximumInterval: 0.36)
         XCTAssertFalse(detector.registerTap(at: 1.0))
         XCTAssertTrue(detector.registerTap(at: 1.3))
         XCTAssertFalse(detector.registerTap(at: 1.5))
-    }
 
-    func testDoesNotTriggerWhenTooSlow() {
-        var detector = DoubleTapDetector(maximumInterval: 0.36)
+        detector = DoubleTapDetector(maximumInterval: 0.36)
         XCTAssertFalse(detector.registerTap(at: 2.0))
         XCTAssertFalse(detector.registerTap(at: 2.5))
-    }
 
-    func testResetCancelsPendingTap() {
-        var detector = DoubleTapDetector()
+        detector = DoubleTapDetector()
         XCTAssertFalse(detector.registerTap(at: 3.0))
         detector.reset()
         XCTAssertFalse(detector.registerTap(at: 3.1))

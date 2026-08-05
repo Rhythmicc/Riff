@@ -2,33 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>zh_CN</string>
-    <key>CFBundleDisplayName</key>
-    <string>Riff</string>
-    <key>CFBundleExecutable</key>
-    <string>Riff</string>
-    <key>CFBundleIdentifier</key>
-    <string>dev.rhythmicc.Riff</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>Riff</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.3.0</string>
-    <key>CFBundleVersion</key>
-    <string>4</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>用于读取快捷键触发前选中的文字。</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 Rhythmicc</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleDisplayName</key>
+	<string>Riff</string>
+	<key>CFBundleExecutable</key>
+	<string>Riff</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.rhythmicc.Riff</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Riff</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.4.0</string>
+	<key>CFBundleVersion</key>
+	<string>5</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>用于读取快捷键触发前选中的文字。</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Rhythmicc</string>
 </dict>
 </plist>

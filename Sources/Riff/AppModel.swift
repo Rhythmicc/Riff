@@ -148,6 +148,31 @@ final class AppModel: ObservableObject {
 
     var isUnicodeQuery: Bool { unicodeQuery != nil }
 
+    var generatedPassword: GeneratedPassword? {
+        guard case .password(_, let result, _) = state.content else { return nil }
+        return result
+    }
+
+    var passwordRequest: PasswordRequest? {
+        guard case .password(let request, _, _) = state.content else { return nil }
+        return request
+    }
+
+    var passwordCrackEstimateText: String? {
+        guard let request = passwordRequest else { return nil }
+        return PasswordCrackEstimate.localizedSummary(for: request)
+    }
+
+    var passwordGenerationError: String? {
+        guard case .password(_, _, let error) = state.content else { return nil }
+        return error
+    }
+
+    var isPasswordQuery: Bool {
+        if case .password = state.content { return true }
+        return false
+    }
+
     var isGraphQuery: Bool {
         if case .graph = state.content { return true }
         return false
@@ -213,7 +238,7 @@ final class AppModel: ObservableObject {
 
     var hasInferredContent: Bool {
         switch state.content {
-        case .calculation, .currency, .graph, .unicode, .aiAnswer: return true
+        case .calculation, .currency, .graph, .unicode, .password, .aiAnswer: return true
         case .idle, .systemOperations, .fallback, .applications, .clipboard: return false
         }
     }
@@ -227,18 +252,20 @@ final class AppModel: ObservableObject {
             return !result.isEmpty && !isLoading ? 1 : 0
         case .applications(let actions, let items, _, _): return actions.count + items.count
         case .clipboard(let items): return items.count
-        case .calculation, .currency: return 1
+        case .calculation, .currency, .password: return 1
         case .unicode(_, let items, _): return items.count
         }
     }
 
     var shouldShowResults: Bool {
         state.mode == .clipboard
+            || state.mode == .password
             || !state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var selectionIsActionable: Bool {
-        !isGraphQuery && resultCount > 0
+        if isPasswordQuery { return generatedPassword != nil }
+        return !isGraphQuery && resultCount > 0
     }
 
     var showsNoteAction: Bool { quickActions.contains(.note) }
@@ -250,10 +277,24 @@ final class AppModel: ObservableObject {
         metricsQueryText = ""
         rankedApplications = []
         applicationResultLimit = 8
-        let content: LauncherContent = newMode == .clipboard
-            ? .clipboard(Array(clipboard.items.prefix(7)))
-            : .idle
-        state = LauncherState(query: "", mode: newMode, selectedIndex: 0, content: content)
+        switch newMode {
+        case .clipboard:
+            state = LauncherState(
+                query: "",
+                mode: .clipboard,
+                selectedIndex: 0,
+                content: .clipboard(Array(clipboard.items.prefix(7)))
+            )
+        case .password:
+            publishPassword(PasswordRequest(), query: "")
+        case .apps:
+            state = LauncherState(
+                query: "",
+                mode: .apps,
+                selectedIndex: 0,
+                content: .idle
+            )
+        }
     }
 
     func reset(for mode: LauncherMode) {
@@ -341,6 +382,10 @@ final class AppModel: ObservableObject {
             recordSuccessfulActivation()
             copyText(items[state.selectedIndex].symbol)
             return true
+        case .password(_, let result?, _):
+            recordSuccessfulActivation()
+            copyText(result.value)
+            return true
         case .currency(let result?, _, _):
             recordSuccessfulActivation()
             copyText(result)
@@ -365,6 +410,12 @@ final class AppModel: ObservableObject {
                     recordSuccessfulActivation()
                     onOpenTranslation?()
                     return true
+                case .password:
+                    publishPassword(
+                        PasswordRequest.parseOptions(from: state.query),
+                        query: PasswordRequest.parameterText(from: state.query)
+                    )
+                    return false
                 }
             }
             let applicationOffset = state.selectedIndex - actions.count
@@ -379,9 +430,16 @@ final class AppModel: ObservableObject {
             recordSuccessfulActivation()
             clipboard.copy(items[state.selectedIndex])
             return true
-        case .idle, .currency, .graph:
+        case .idle, .currency, .graph, .password:
             return false
         }
+    }
+
+    @discardableResult
+    func regeneratePassword() -> Bool {
+        guard case .password(let request, _, _) = state.content else { return false }
+        publishPassword(request, query: state.query)
+        return true
     }
 
     func selectedClipboardItem() -> ClipboardItem? {
@@ -472,6 +530,23 @@ final class AppModel: ObservableObject {
             return
         }
 
+        if oldState.mode == .password {
+            let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                publishPassword(PasswordRequest(), query: "")
+                return
+            }
+            if PasswordRequest.isParameterText(trimmed) {
+                publishPassword(
+                    PasswordRequest.parseOptions(from: trimmed),
+                    query: newQuery
+                )
+                return
+            }
+            // Not a parameter: leave the component and treat the text as a
+            // normal launcher query below.
+        }
+
         guard !trimmedQuery.isEmpty else {
             rankedApplications = []
             state = LauncherState(query: newQuery, mode: .apps, selectedIndex: 0, content: .idle)
@@ -553,6 +628,13 @@ final class AppModel: ObservableObject {
             )
             startUnicodeSearch(query: unicodeQuery, requestedText: newQuery)
 
+        case .password(let request):
+            rankedApplications = []
+            publishPassword(
+                request,
+                query: PasswordRequest.parameterText(from: newQuery)
+            )
+
         case .currency(let conversion):
             rankedApplications = []
             state = LauncherState(
@@ -565,13 +647,37 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func publishPassword(_ request: PasswordRequest, query: String) {
+        do {
+            let generated = try PasswordGenerator.generate(request)
+            state = LauncherState(
+                query: query,
+                mode: .password,
+                selectedIndex: 0,
+                content: .password(request: request, result: generated, error: nil)
+            )
+        } catch {
+            state = LauncherState(
+                query: query,
+                mode: .password,
+                selectedIndex: 0,
+                content: .password(
+                    request: request,
+                    result: nil,
+                    error: error.localizedDescription
+                )
+            )
+        }
+    }
+
     private func startApplicationSearch(query: String, actions: [LauncherQuickAction]) {
         applicationSearchTask = Task { [weak self] in
             guard let self else { return }
             let searchedResults = await applicationSearch.search(query)
             guard !Task.isCancelled,
                   state.mode == .apps,
-                  state.query == query else { return }
+                  state.query == query,
+                  case .applications = state.content else { return }
             let results = Self.rankApplicationsForPresentation(
                 query: query,
                 searchedResults: searchedResults,

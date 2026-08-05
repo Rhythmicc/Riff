@@ -16,6 +16,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the launcher state and performance bo
 - 输入 `unicode arrow`、`emoji grin`、`符号 箭头` 或 `U+2192`，搜索并复制 Unicode/Emoji 字符；关键词支持设置中选择的母语
 - 输入 `睡眠`、`锁屏`、`关闭显示器` 或 `屏保`，直接执行对应的 macOS 系统操作；也支持 `sleep`、`lock screen` 等英文关键词
 - 输入 `100 USD to CNY`，使用 ECB 每个工作日发布的参考汇率换算
+- 输入 `随机密码`、`生成密码`、`pwgen` 等关键词，或选择 `密码` 快捷操作，进入随机密码组件；在组件输入框可直接输入长度（8–128 位）和「无符号」排除特殊符号，Tab 或 `⌘R` 重新生成，回车复制；组件会按每秒 100 亿次离线猜测估算暴力破解所需时间
+- 软件更新：设置中可检查 GitHub Releases 新版本，下载后校验 SHA-256 与签名，替换当前 App 并自动重新启动；启动时每天静默检查一次
 - 没有匹配候选项时，可用默认浏览器执行 Google 搜索，或直接使用设置中的 AI Provider 流式回答；已打开的候选项会按最近使用顺序优先展示
 - OpenAI、OpenRouter、Gemini 三种翻译 Provider
 - API Key 保存在 macOS Keychain 的 `Riff` 服务项，不使用开发环境命名

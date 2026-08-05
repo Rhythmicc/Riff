@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let clipboard = ClipboardStore()
     private let systemOperationExecutor = SystemOperationExecutor()
     private let experienceMetrics = ExperienceMetricsStore()
+    private let updater = AppUpdater()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard claimSingleRunningInstance() else { return }
@@ -50,7 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController = SettingsPanelController(
             settings: settings,
             shortcuts: shortcuts,
-            experienceMetrics: experienceMetrics
+            experienceMetrics: experienceMetrics,
+            updater: updater
         )
         translationController = TranslationPanelController(
             model: translationModel,
@@ -73,6 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(true, forKey: "hasCompletedFirstLaunch")
             launcherController.show(mode: .apps)
         }
+
+        checkForUpdatesSilentlyIfNeeded()
+    }
+
+    private func checkForUpdatesSilentlyIfNeeded() {
+        let defaults = UserDefaults.standard
+        let lastCheck = defaults.object(forKey: "update.lastCheckDate") as? Date
+        let oneDay: TimeInterval = 86_400
+        guard lastCheck == nil || Date().timeIntervalSince(lastCheck!) >= oneDay else { return }
+        defaults.set(Date(), forKey: "update.lastCheckDate")
+        Task { await updater.checkForUpdates() }
     }
 
     /// Launch Services normally keeps an application single-instance, but a

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 enum LauncherMode: String, CaseIterable, Identifiable {
     case apps
     case clipboard
+    case password
 
     var id: String { rawValue }
 
@@ -12,6 +13,7 @@ enum LauncherMode: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return "应用"
         case .clipboard: return "剪贴板"
+        case .password: return "随机密码"
         }
     }
 
@@ -19,6 +21,7 @@ enum LauncherMode: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return "square.grid.2x2"
         case .clipboard: return "doc.on.clipboard"
+        case .password: return "key.horizontal"
         }
     }
 
@@ -26,6 +29,7 @@ enum LauncherMode: String, CaseIterable, Identifiable {
         switch keyCode {
         case 18: return .apps
         case 19: return .clipboard
+        case 20: return .password
         default: return nil
         }
     }
@@ -35,6 +39,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
     case note
     case clipboard
     case translation
+    case password
 
     var id: String { rawValue }
 
@@ -43,6 +48,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .note: return "打开笔记"
         case .clipboard: return "打开剪贴板历史"
         case .translation: return "打开翻译"
+        case .password: return "生成随机密码"
         }
     }
 
@@ -51,6 +57,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .note: return "管理和编辑 Markdown 笔记"
         case .clipboard: return "搜索、预览并复制历史内容"
         case .translation: return "返回当前翻译，或翻译选中的文本"
+        case .password: return "生成一个 16 位安全随机密码"
         }
     }
 
@@ -59,6 +66,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .note: return "note.text"
         case .clipboard: return "doc.on.clipboard"
         case .translation: return "character.book.closed"
+        case .password: return "key.horizontal"
         }
     }
 
@@ -70,6 +78,8 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
             return ["剪贴板", "粘贴板", "剪贴板历史", "粘贴板历史", "clipboard", "pasteboard", "history"]
         case .translation:
             return ["翻译", "译文", "translate", "translation", "translator"]
+        case .password:
+            return ["密码", "口令", "password", "passwd", "随机密码", "生成密码"]
         }
     }
 

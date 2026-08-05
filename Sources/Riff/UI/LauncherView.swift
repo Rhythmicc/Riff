@@ -180,6 +180,7 @@ struct LauncherView: View {
             switch model.mode {
             case .apps: appResults
             case .clipboard: clipboardResults
+            case .password: passwordCard
             }
         }
     }
@@ -305,6 +306,8 @@ struct LauncherView: View {
                 aiAnswerCard
             } else if model.isUnicodeQuery {
                 unicodeResults
+            } else if model.isPasswordQuery {
+                passwordCard
             } else if let expression = model.graphExpression,
                       let plot = model.graphPlot {
                 FunctionGraphCard(expression: expression, plot: plot)
@@ -469,6 +472,65 @@ struct LauncherView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+    private var passwordCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("安全随机密码", systemImage: "key.horizontal")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LauncherTheme.secondary)
+                Spacer()
+                Button {
+                    model.regeneratePassword()
+                } label: {
+                    Label("重新生成", systemImage: "arrow.clockwise")
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+            }
+
+            if let generated = model.generatedPassword {
+                Text(generated.value)
+                    .font(.system(size: 29, weight: .medium, design: .monospaced))
+                    .foregroundStyle(LauncherTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .textSelection(.enabled)
+
+                HStack {
+                    Text(passwordSummaryText)
+                    Spacer()
+                    Label("回车复制", systemImage: "doc.on.doc")
+                    Text("Tab / ⌘R 重新生成")
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(LauncherTheme.secondary)
+
+                if let estimate = model.passwordCrackEstimateText {
+                    Text(estimate)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LauncherTheme.secondary.opacity(0.75))
+                }
+
+                if model.passwordRequest?.includeSymbols != false {
+                    Text("输入「无符号」可排除特殊符号")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LauncherTheme.secondary.opacity(0.75))
+                }
+            } else {
+                Text(model.passwordGenerationError ?? "无法生成密码")
+                    .foregroundStyle(Color(nsColor: .systemRed))
+            }
+        }
+        .padding(26)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(LauncherTheme.hairline, lineWidth: 0.5)
+        }
+        .padding(28)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
     private func graphErrorCard(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "waveform.path.ecg")
@@ -570,7 +632,16 @@ struct LauncherView: View {
         switch model.mode {
         case .apps: return "搜索…"
         case .clipboard: return "筛选剪贴板历史…"
+        case .password: return "长度 8–128，可加「无符号」…"
         }
+    }
+
+    private var passwordSummaryText: String {
+        guard let request = model.passwordRequest else { return "" }
+        let charset = request.includeSymbols
+            ? "大小写字母、数字和符号"
+            : "大小写字母和数字（无符号）"
+        return "\(request.length) 位 · \(charset)"
     }
 
     private var contextualSymbol: String {
@@ -585,6 +656,7 @@ struct LauncherView: View {
         if model.isUnicodeQuery {
             return model.unicodeQuery?.scope == .emoji ? "face.smiling" : "textformat"
         }
+        if model.isPasswordQuery { return "key.horizontal" }
         if model.currencyResult != nil || model.isConvertingCurrency { return "arrow.left.arrow.right" }
         if model.calculation != nil { return "function" }
         return model.mode.symbol

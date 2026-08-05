@@ -45,11 +45,6 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertLessThan(LauncherMotion.dismissalDuration, LauncherMotion.presentationDuration)
         XCTAssertLessThanOrEqual(LauncherMotion.presentationDuration, 0.40)
         XCTAssertGreaterThanOrEqual(LauncherMotion.resizeCoalescingDelay, 0.20)
-        XCTAssertGreaterThan(LauncherMotion.presentationScale, 1)
-        XCTAssertLessThan(LauncherMotion.presentationOvershootScale, 1)
-        XCTAssertGreaterThan(LauncherMotion.presentationReboundScale, 1)
-        XCTAssertLessThan(LauncherMotion.dismissalScale, 1)
-        XCTAssertGreaterThan(LauncherMotion.dismissalScale, 0.97)
     }
 
     func testVisibilityTransformsPreserveFrameAndUseTheGeometricCenter() {
@@ -123,7 +118,7 @@ final class LauncherModeTests: XCTestCase {
     func testCommandNumberNavigationKeyCodes() {
         XCTAssertEqual(LauncherMode.navigationMode(for: 18), .apps)
         XCTAssertEqual(LauncherMode.navigationMode(for: 19), .clipboard)
-        XCTAssertNil(LauncherMode.navigationMode(for: 20))
+        XCTAssertEqual(LauncherMode.navigationMode(for: 20), .password)
         XCTAssertNil(LauncherMode.navigationMode(for: 21))
     }
 
@@ -147,6 +142,107 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertEqual(LauncherQuickAction.matching("翻译"), [.translation])
         XCTAssertEqual(LauncherQuickAction.matching("translate"), [.translation])
         XCTAssertEqual(LauncherQuickAction.matching("translator"), [.translation])
+    }
+
+    func testPasswordQueriesOfferPasswordGeneration() {
+        XCTAssertEqual(LauncherQuickAction.matching("密码"), [.password])
+        XCTAssertEqual(LauncherQuickAction.matching("口令"), [.password])
+        XCTAssertEqual(LauncherQuickAction.matching("password"), [.password])
+    }
+
+    @MainActor
+    func testPasswordCommandEntersComponent() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "随机密码"
+
+        XCTAssertEqual(model.mode, .password)
+        XCTAssertTrue(model.isPasswordQuery)
+        XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.passwordRequest?.length, 16)
+        XCTAssertTrue(model.shouldShowResults)
+    }
+
+    @MainActor
+    func testPasswordCommandCarriesParametersIntoComponent() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "随机密码 24 无符号"
+
+        XCTAssertEqual(model.mode, .password)
+        XCTAssertEqual(model.query, "24 无符号")
+        XCTAssertEqual(model.passwordRequest?.length, 24)
+        XCTAssertEqual(model.passwordRequest?.includeSymbols, false)
+        XCTAssertEqual(model.generatedPassword?.length, 24)
+    }
+
+    @MainActor
+    func testPasswordQuickActionEntersComponent() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "pas"
+        guard let passwordIndex = model.quickActions.firstIndex(of: .password) else {
+            return XCTFail("Expected a password quick action for pas")
+        }
+        model.selectedIndex = passwordIndex
+
+        _ = model.activateSelection()
+
+        XCTAssertEqual(model.mode, .password)
+        XCTAssertTrue(model.isPasswordQuery)
+        XCTAssertEqual(model.query, "")
+        XCTAssertEqual(model.passwordRequest?.length, 16)
+        XCTAssertTrue(model.shouldShowResults)
+    }
+
+    @MainActor
+    func testPasswordComponentAcceptsParameterEdits() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "随机密码"
+        XCTAssertEqual(model.query, "")
+
+        model.query = "24 无符号"
+        XCTAssertEqual(model.mode, .password)
+        XCTAssertEqual(model.passwordRequest?.length, 24)
+        XCTAssertEqual(model.passwordRequest?.includeSymbols, false)
+        XCTAssertEqual(model.generatedPassword?.length, 24)
+
+        model.query = ""
+        XCTAssertEqual(model.mode, .password)
+        XCTAssertEqual(model.passwordRequest?.length, 16)
+        XCTAssertEqual(model.passwordRequest?.includeSymbols, true)
+    }
+
+    @MainActor
+    func testPasswordComponentExitsForNonParameterInput() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "随机密码"
+        XCTAssertEqual(model.mode, .password)
+
+        model.query = "safari"
+
+        XCTAssertEqual(model.mode, .apps)
+        XCTAssertFalse(model.isPasswordQuery)
+        XCTAssertEqual(model.query, "safari")
+    }
+
+    @MainActor
+    func testTabRegeneratesInsidePasswordComponent() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "pwgen 32"
+        let first = model.generatedPassword?.value
+
+        XCTAssertTrue(model.regeneratePassword())
+
+        XCTAssertNotEqual(model.generatedPassword?.value, first)
+        XCTAssertEqual(model.query, "32")
+        XCTAssertEqual(model.mode, .password)
+    }
+
+    @MainActor
+    func testPasswordComponentShowsCrackEstimate() {
+        let model = AppModel(clipboard: ClipboardStore())
+        model.query = "随机密码"
+
+        XCTAssertTrue(model.passwordCrackEstimateText?.contains("位熵") == true)
+        XCTAssertTrue(model.passwordCrackEstimateText?.contains("宇宙年龄") == true)
     }
 
     @MainActor

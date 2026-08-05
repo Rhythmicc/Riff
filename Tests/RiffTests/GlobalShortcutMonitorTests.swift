@@ -4,18 +4,13 @@ import XCTest
 @testable import Riff
 
 final class GlobalShortcutMonitorTests: XCTestCase {
-    func testConvertsCGEventFlagsToCarbonModifiers() {
-        let flags: CGEventFlags = [.maskCommand, .maskShift]
+    func testConvertsCGEventFlagsToCarbonModifiersAndIgnoresUnrelatedFlags() {
         XCTAssertEqual(
-            GlobalShortcutMonitor.carbonModifiers(from: flags),
+            GlobalShortcutMonitor.carbonModifiers(from: [.maskCommand, .maskShift]),
             UInt32(cmdKey | shiftKey)
         )
-    }
-
-    func testIgnoresUnrelatedCGEventFlags() {
-        let flags: CGEventFlags = [.maskCommand, .maskNonCoalesced]
         XCTAssertEqual(
-            GlobalShortcutMonitor.carbonModifiers(from: flags),
+            GlobalShortcutMonitor.carbonModifiers(from: [.maskCommand, .maskNonCoalesced]),
             UInt32(cmdKey)
         )
     }

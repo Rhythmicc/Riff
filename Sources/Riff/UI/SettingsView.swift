@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var shortcuts: ShortcutStore
     @ObservedObject var experienceMetrics: ExperienceMetricsStore
+    @ObservedObject var updater: AppUpdater
     let close: () -> Void
     @State private var accessibilityGranted = SelectionReader.isAccessibilityTrusted
 
@@ -204,6 +205,61 @@ struct SettingsView: View {
                     }
 
                     Text("Riff 只会在首次需要时自动询问一次。之后可在这里主动请求，不会在每次启动时重复弹窗。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LauncherTheme.secondary)
+                }
+
+                Section("软件更新") {
+                    HStack {
+                        Text("当前版本")
+                        Spacer()
+                        Text("\(updater.currentVersion) (\(updater.currentBuild))")
+                            .monospacedDigit()
+                            .foregroundStyle(LauncherTheme.secondary)
+                    }
+
+                    switch updater.state {
+                    case .idle:
+                        Button("检查更新") {
+                            Task { await updater.checkForUpdates() }
+                        }
+                    case .checking:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("正在检查更新…")
+                        }
+                    case .upToDate:
+                        Label("已是最新版本", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Button("再次检查") {
+                            Task { await updater.checkForUpdates() }
+                        }
+                    case .available(let release):
+                        Label("发现新版本 \(release.tagName)", systemImage: "arrow.down.circle.fill")
+                            .foregroundStyle(LauncherTheme.primary)
+                        Button("下载并安装") {
+                            Task { await updater.downloadAndInstall(release) }
+                        }
+                    case .downloading(let release):
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("正在下载并校验 \(release.tagName)…")
+                        }
+                    case .installing:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("正在安装，完成后会自动重启…")
+                        }
+                    case .failed(let message):
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.orange)
+                        Button("重试") {
+                            Task { await updater.checkForUpdates() }
+                        }
+                    }
+
+                    Text("更新来自 GitHub Releases：下载后校验 SHA-256 与签名，替换当前 App 后自动重新启动。")
                         .font(.system(size: 11))
                         .foregroundStyle(LauncherTheme.secondary)
                 }

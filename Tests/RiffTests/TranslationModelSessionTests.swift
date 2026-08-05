@@ -3,8 +3,10 @@ import XCTest
 
 @MainActor
 final class TranslationModelSessionTests: XCTestCase {
-    func testCompletedTranslationRemainsAReopenableSession() {
+    func testSessionPresenceTracksPreparedTranslations() {
         let model = TranslationModel(settings: SettingsStore())
+
+        XCTAssertFalse(model.hasSession)
         model.preparePreview(
             source: "Hello",
             result: "你好",
@@ -14,11 +16,5 @@ final class TranslationModelSessionTests: XCTestCase {
         XCTAssertTrue(model.hasSession)
         XCTAssertEqual(model.source, "Hello")
         XCTAssertEqual(model.result, "你好")
-    }
-
-    func testFreshModelDoesNotClaimToHaveSession() {
-        let model = TranslationModel(settings: SettingsStore())
-
-        XCTAssertFalse(model.hasSession)
     }
 }

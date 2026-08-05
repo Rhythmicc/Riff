@@ -7,6 +7,7 @@ enum LauncherQueryIntent {
     case currency(CurrencyQuery)
     case graph(expression: MathExpression?, error: String?)
     case unicode(UnicodeSearchQuery)
+    case password(PasswordRequest)
 }
 
 enum LauncherQueryClassifier {
@@ -21,6 +22,10 @@ enum LauncherQueryClassifier {
 
         if let unicodeQuery = UnicodeSearchQuery.parse(query) {
             return .unicode(unicodeQuery)
+        }
+
+        if let passwordRequest = PasswordRequest.parse(query) {
+            return .password(passwordRequest)
         }
 
         if let calculation = calculation(for: query) {
@@ -75,6 +80,7 @@ enum LauncherContent {
         isLoading: Bool
     )
     case unicode(query: UnicodeSearchQuery, items: [UnicodeSymbol], isSearching: Bool)
+    case password(request: PasswordRequest, result: GeneratedPassword?, error: String?)
 
     var presentationKind: LauncherContentKind {
         switch self {
@@ -88,6 +94,7 @@ enum LauncherContent {
         case .currency: return .currency
         case .graph: return .graph
         case .unicode: return .unicode
+        case .password: return .password
         }
     }
 
@@ -99,7 +106,7 @@ enum LauncherContent {
         case .graph(_, _, _, let isLoading): return !isLoading
         case .unicode(_, _, let isSearching): return !isSearching
         case .aiAnswer(_, _, _, _, let isLoading): return !isLoading
-        case .systemOperations, .fallback, .clipboard, .calculation: return true
+        case .systemOperations, .fallback, .clipboard, .calculation, .password: return true
         }
     }
 
@@ -115,6 +122,7 @@ enum LauncherContent {
         case .currency(let result, let error, _): return result != nil || error != nil
         case .graph(let expression, _, let error, _): return expression != nil || error != nil
         case .unicode(_, let items, _): return !items.isEmpty
+        case .password(_, let result, let error): return result != nil || error != nil
         }
     }
 }
@@ -130,6 +138,7 @@ enum LauncherContentKind: Hashable {
     case currency
     case graph
     case unicode
+    case password
 }
 
 struct LauncherState {

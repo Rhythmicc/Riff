@@ -233,6 +233,8 @@ final class LauncherPanelController: MaterialPanelController {
             case 13 where modifiers == .command:
                 self.dismiss()
                 return nil
+            case 15 where modifiers == .command:
+                return self.model.regeneratePassword() ? nil : event
             case 125:
                 if self.model.isUnicodeQuery {
                     self.model.moveUnicodeSelection(
@@ -267,6 +269,12 @@ final class LauncherPanelController: MaterialPanelController {
                 }
                 return nil
             case 48 where event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty:
+                // Inside the password component, Tab is a component operation
+                // (regenerate) and never switches the launcher window mode.
+                if self.model.mode == .password {
+                    self.model.regeneratePassword()
+                    return nil
+                }
                 let modes = LauncherMode.allCases
                 if let index = modes.firstIndex(of: self.model.mode) {
                     self.model.switchMode(modes[(index + 1) % modes.count])
@@ -768,13 +776,15 @@ final class SettingsPanelController: MaterialPanelController {
     init(
         settings: SettingsStore,
         shortcuts: ShortcutStore,
-        experienceMetrics: ExperienceMetricsStore
+        experienceMetrics: ExperienceMetricsStore,
+        updater: AppUpdater
     ) {
         super.init(size: NSSize(width: 560, height: 540), level: .floating)
         install(SettingsView(
             settings: settings,
             shortcuts: shortcuts,
             experienceMetrics: experienceMetrics,
+            updater: updater,
             close: { [weak panel] in panel?.orderOut(nil) }
         ))
 
