@@ -55,19 +55,32 @@ final class LauncherInputTests: XCTestCase {
         defer { controller.panel.orderOut(nil) }
 
         controller.show(mode: .apps)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
 
         XCTAssertTrue(controller.panel.styleMask.contains(.nonactivatingPanel))
         XCTAssertTrue(controller.panel.hasShadow)
-        XCTAssertTrue(controller.panel.isKeyWindow)
-        XCTAssertTrue(controller.panel.firstResponder is NSTextView)
+        XCTAssertTrue(waitForSearchFocus(on: controller.panel))
 
         model.query = "r"
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.15))
 
         XCTAssertTrue(model.shouldShowResults)
-        XCTAssertTrue(controller.panel.isKeyWindow)
-        XCTAssertTrue(controller.panel.firstResponder is NSTextView)
+        XCTAssertTrue(waitForSearchFocus(on: controller.panel))
+    }
+
+    /// Focus is established through an AppKit field editor after the panel
+    /// becomes key, which is timing-sensitive on CI. Poll instead of sleeping
+    /// a fixed amount so slower runners don't produce false failures.
+    private func waitForSearchFocus(
+        on panel: KeyablePanel,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if panel.isKeyWindow, panel.firstResponder is NSTextView {
+                return true
+            }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        }
+        return panel.isKeyWindow && panel.firstResponder is NSTextView
     }
 
     func testLauncherCanDismissImmediatelyWithoutLeavingTransparentPanelVisible() {
