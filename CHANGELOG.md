@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- AI 对话持久化迁移到 SQLite：对话与消息存入 `chat.sqlite3`（WAL），不再整文件重写 `chat.json`；本机旧数据已一次性迁移，`chat.json` 保留为 `chat.json.migrated`。
+- AI 服务层重构：新增统一传输层（OpenAI Responses / OpenAI 兼容 / Gemini），工具调用循环与 provider 无关，OpenAI 与 Gemini 现在同样支持本地工具；本地 llama.cpp 补全拆分为独立客户端。
+- 新增组件系统第一阶段：`ComponentRegistry` + `ComponentManager` 统一管理组件，设置页新增“组件”分区，可启停内置组件（应用启动为系统内置，不可禁用）。
+- 新增 `Docs/` 架构设计文档：组件系统、AI 服务统一、对话 SQLite 迁移。
+
 ## 0.5.0
 
 - 新增 DeepSeek Provider，翻译、启动器 AI 回答和笔记补全均可使用。

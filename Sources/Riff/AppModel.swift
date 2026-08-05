@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isIndexing = true
 
     let clipboard: ClipboardStore
+    let componentManager: ComponentManager
     var onOpenNote: (() -> Void)?
     var onOpenTranslation: (() -> Void)?
     var onOpenChat: (() -> Void)?
@@ -48,9 +49,11 @@ final class AppModel: ObservableObject {
         noteModel: NoteModel? = nil,
         usageStore: LauncherUsageStore? = nil,
         experienceMetrics: ExperienceMetricsStore? = nil,
-        applicationIndex: ApplicationIndex = ApplicationIndex()
+        applicationIndex: ApplicationIndex = ApplicationIndex(),
+        componentManager: ComponentManager? = nil
     ) {
         self.clipboard = clipboard
+        self.componentManager = componentManager ?? ComponentManager()
         self.settings = settings
         self.noteModel = noteModel
         self.usageStore = usageStore ?? LauncherUsageStore()
@@ -587,7 +590,12 @@ final class AppModel: ObservableObject {
             return
         }
 
-        switch LauncherQueryClassifier.classify(newQuery) {
+        var intent = LauncherQueryClassifier.classify(newQuery)
+        if case .systemOperations = intent,
+           !componentManager.isEnabled(ComponentID.systemOperations) {
+            intent = .applications(actions: LauncherQuickAction.matching(newQuery))
+        }
+        switch intent {
         case .systemOperations(let operations):
             rankedApplications = []
             let rankedOperations = usageStore.sorted(operations) { "system:\($0.rawValue)" }
@@ -599,7 +607,11 @@ final class AppModel: ObservableObject {
             )
 
         case .applications(let actions):
-            let rankedActions = usageStore.sorted(actions) { "quick:\($0.rawValue)" }
+            let enabledActions = actions.filter { action in
+                guard let componentID = Self.componentID(for: action) else { return true }
+                return componentManager.isEnabled(componentID)
+            }
+            let rankedActions = usageStore.sorted(enabledActions) { "quick:\($0.rawValue)" }
             let previousItems: [ApplicationRecord]
             if case .applications(_, let items, _, _) = oldState.content {
                 previousItems = items
@@ -678,6 +690,16 @@ final class AppModel: ObservableObject {
                 content: .currency(result: nil, error: nil, isLoading: true)
             )
             startCurrencyConversion(conversion, requestedText: newQuery)
+        }
+    }
+
+    nonisolated static func componentID(for action: LauncherQuickAction) -> String? {
+        switch action {
+        case .note: return ComponentID.note
+        case .clipboard: return ComponentID.clipboard
+        case .translation: return ComponentID.translation
+        case .password: return ComponentID.password
+        case .chat: return ComponentID.chat
         }
     }
 

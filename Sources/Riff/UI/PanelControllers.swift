@@ -851,7 +851,8 @@ final class SettingsPanelController: MaterialPanelController {
         settings: SettingsStore,
         shortcuts: ShortcutStore,
         experienceMetrics: ExperienceMetricsStore,
-        updater: AppUpdater
+        updater: AppUpdater,
+        componentManager: ComponentManager
     ) {
         super.init(size: NSSize(width: 560, height: 540), level: .floating, surfaceCornerRadius: 18)
         install(SettingsView(
@@ -859,6 +860,7 @@ final class SettingsPanelController: MaterialPanelController {
             shortcuts: shortcuts,
             experienceMetrics: experienceMetrics,
             updater: updater,
+            components: componentManager,
             close: { [weak panel] in panel?.orderOut(nil) }
         ))
 

@@ -28,6 +28,7 @@ struct ChatConversation: Identifiable, Codable, Equatable {
     let id: UUID
     var title: String
     var model: String
+    var provider: String
     var messages: [ChatMessage]
     let createdAt: Date
     var updatedAt: Date
@@ -36,6 +37,7 @@ struct ChatConversation: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         title: String = "新对话",
         model: String = ChatModel.defaultModel,
+        provider: String = "",
         messages: [ChatMessage] = [],
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -43,6 +45,7 @@ struct ChatConversation: Identifiable, Codable, Equatable {
         self.id = id
         self.title = title
         self.model = model
+        self.provider = provider
         self.messages = messages
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -56,11 +59,6 @@ final class ChatModel: ObservableObject {
     /// Fallback used only when a provider default cannot be resolved.
     static let defaultModel = "deepseek-v4-flash"
 
-    private struct Archive: Codable {
-        var conversations: [ChatConversation]
-        var selectedConversationID: UUID
-    }
-
     @Published private(set) var conversations: [ChatConversation]
     @Published private(set) var selectedConversationID: UUID
     @Published private(set) var isStreaming = false
@@ -68,7 +66,7 @@ final class ChatModel: ObservableObject {
 
     private let settings: SettingsStore
     private let noteModel: NoteModel?
-    private let archiveURL: URL
+    private let database: ChatDatabase?
     private var saveTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
 
@@ -81,15 +79,18 @@ final class ChatModel: ObservableObject {
             withIntermediateDirectories: true,
             attributes: nil
         )
-        archiveURL = resolvedDirectory.appendingPathComponent("chat.json")
+        let databaseURL = resolvedDirectory.appendingPathComponent("chat.sqlite3")
+        let openedDatabase = try? ChatDatabase(url: databaseURL)
+        database = openedDatabase
 
-        if let data = try? Data(contentsOf: archiveURL),
-           let archive = try? JSONDecoder().decode(Archive.self, from: data),
-           !archive.conversations.isEmpty {
-            conversations = archive.conversations
-            selectedConversationID = archive.conversations.contains(where: {
-                $0.id == archive.selectedConversationID
-            }) ? archive.selectedConversationID : archive.conversations[0].id
+        if let openedDatabase,
+           let stored = try? openedDatabase.loadAll(),
+           !stored.isEmpty {
+            conversations = stored
+            let storedSelection = try? openedDatabase.selectedConversationID()
+            selectedConversationID = stored.contains(where: { $0.id == storedSelection })
+                ? storedSelection!
+                : stored[0].id
         } else {
             let initial = ChatConversation()
             conversations = [initial]
@@ -127,11 +128,13 @@ final class ChatModel: ObservableObject {
     }
 
     func deleteSelectedConversation() {
+        let deletedID = selectedConversationID
         conversations.removeAll { $0.id == selectedConversationID }
         if conversations.isEmpty {
             conversations = [ChatConversation()]
         }
         selectedConversationID = conversations[0].id
+        try? database?.deleteConversation(id: deletedID)
         scheduleSave()
     }
 
@@ -360,12 +363,11 @@ final class ChatModel: ObservableObject {
     }
 
     private func saveImmediately() {
-        let archive = Archive(
-            conversations: conversations,
-            selectedConversationID: selectedConversationID
-        )
-        guard let data = try? JSONEncoder().encode(archive) else { return }
-        try? data.write(to: archiveURL, options: .atomic)
+        guard let database else { return }
+        for conversation in conversations {
+            try? database.upsertConversation(conversation)
+        }
+        try? database.setSelectedConversation(id: selectedConversationID)
     }
 
     static func inferredTitle(from text: String) -> String? {

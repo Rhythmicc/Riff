@@ -26,6 +26,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the launcher state and performance bo
 - OpenAI、OpenRouter、Gemini、DeepSeek 四种翻译 Provider
 - API Key 保存在 macOS Keychain 的 `Riff` 服务项，不使用开发环境命名
 - 设置中提供仅保存在本机的体验指标：启动器会话、成功/放弃、焦点与查询耗时 P95；只保存限长数值，不记录任何查询或用户内容
+- 设置中的“组件”分区可启停内置组件（应用启动为系统内置）；第三方组件规范已设计，安装支持逐步开放
 
 ## 构建
 
@@ -47,6 +48,10 @@ Riff 需要 macOS 14 或更高版本。笔记编辑器使用固定版本的原�
 剪贴板记录保存在 `~/Library/Application Support/Riff/clipboard.sqlite3`，Riff 捕获的图片保存在同目录的 `clipboard-images` 中。记录没有自动过期时间和条数上限，重启或更新应用不会清除数据库；用户可在剪贴板窗口逐条删除、清空全部记录，或通过“本机存储”在 Finder 中查看数据位置。
 
 这些内容不会上传或同步到云端。当前数据库是新的唯一存储格式，Riff 不导入旧版 `clipboard.json`，也不为上一版数据自动建立备份；成功打开新数据库后会直接丢弃旧文件及未被新数据库引用的旧托管图片。
+
+### AI 对话存储
+
+对话与消息保存在 `~/Library/Application Support/Riff/chat.sqlite3`（WAL 模式），随用随写，不再整文件重写 `chat.json`。升级到 0.6.0 时旧数据由本机一次性迁移，原文件改名为 `chat.json.migrated` 保留。
 
 ### 本地笔记补全
 

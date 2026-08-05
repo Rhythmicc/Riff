@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var shortcuts: ShortcutStore
     @ObservedObject var experienceMetrics: ExperienceMetricsStore
     @ObservedObject var updater: AppUpdater
+    @ObservedObject var components: ComponentManager
     let close: () -> Void
     @State private var accessibilityGranted = SelectionReader.isAccessibilityTrusted
 
@@ -188,6 +189,38 @@ struct SettingsView: View {
                     }
                     .font(.system(size: 11))
                     .foregroundStyle(LauncherTheme.secondary)
+                }
+
+                Section("组件") {
+                    ForEach(components.components, id: \.id) { component in
+                        HStack(spacing: 10) {
+                            Image(systemName: component.descriptor.icon.systemName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(LauncherTheme.primary.opacity(0.8))
+                                .frame(width: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(component.descriptor.name)
+                                Text("\(component.descriptor.author) · v\(component.descriptor.version)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(LauncherTheme.secondary)
+                            }
+                            Spacer()
+                            if component.descriptor.isSystemEssential {
+                                Text("内置")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(LauncherTheme.secondary)
+                            } else {
+                                Toggle("", isOn: Binding(
+                                    get: { components.isEnabled(component.id) },
+                                    set: { components.setEnabled(component.id, $0) }
+                                ))
+                                .labelsHidden()
+                            }
+                        }
+                    }
+                    Text("停用后，对应组件的启动器关键词与快捷操作不再出现。第三方组件规范已设计，安装支持将在后续版本提供。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LauncherTheme.secondary)
                 }
 
                 Section("快捷键") {

@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let systemOperationExecutor = SystemOperationExecutor()
     private let experienceMetrics = ExperienceMetricsStore()
     private let updater = AppUpdater()
+    private let componentManager = ComponentManager()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard claimSingleRunningInstance() else { return }
@@ -41,7 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboard: clipboard,
             settings: settings,
             noteModel: noteModel,
-            experienceMetrics: experienceMetrics
+            experienceMetrics: experienceMetrics,
+            componentManager: componentManager
         )
 
         noteController = NotePanelController(model: noteModel, settings: settings)
@@ -61,7 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: settings,
             shortcuts: shortcuts,
             experienceMetrics: experienceMetrics,
-            updater: updater
+            updater: updater,
+            componentManager: componentManager
         )
         translationController = TranslationPanelController(
             model: translationModel,

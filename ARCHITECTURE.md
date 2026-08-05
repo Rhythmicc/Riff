@@ -32,6 +32,16 @@ Riff is a small native macOS app. Its launcher follows a unidirectional input pi
 
 Architecture and behavior regressions belong in `LauncherArchitectureTests`, while individual search implementations keep focused service tests.
 
+## Architecture work
+
+The current architecture phase is designed and implemented in `Docs/`:
+
+- `Docs/ComponentSystem.md` — unified component registry, built-in component catalog, enablement UI; third-party script components remain a future phase.
+- `Docs/AIServiceUnification.md` — provider transports, shared streaming, and a provider-agnostic tool loop.
+- `Docs/ChatSQLite.md` — AI conversation persistence now lives in `chat.sqlite3` (WAL); local `chat.json` data was migrated once.
+
+These documents are the reference for remaining implementation and test boundaries.
+
 ## Clipboard persistence
 
 1. `ClipboardStore` observes pasteboard changes and owns the UI-facing in-memory snapshot.
