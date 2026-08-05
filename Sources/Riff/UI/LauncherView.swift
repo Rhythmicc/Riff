@@ -4,7 +4,7 @@ import SwiftUI
 struct LauncherView: View {
     static let designSize = CGSize(width: 840, height: 650)
     static let collapsedDesignHeight: CGFloat = 74
-    static let clipboardDesignHeight: CGFloat = 820
+    static let clipboardDesignHeight: CGFloat = 860
     static let scale: CGFloat = 0.84
     static let unicodeGridColumnCount = 8
     static let candidateRowDesignHeight: CGFloat = 56
@@ -51,6 +51,7 @@ struct LauncherView: View {
 
     @FocusState private var searchFocused: Bool
     @State private var confirmsClipboardClear = false
+    @State private var showsClipboardPreview = true
     var body: some View {
         VStack(spacing: 0) {
             searchHeader
@@ -285,11 +286,13 @@ struct LauncherView: View {
                 .padding(.top, 8)
             }
             .scrollIndicators(.visible)
-            .frame(width: 520)
+            .frame(maxWidth: showsClipboardPreview ? 620 : .infinity)
 
-            Rectangle().fill(LauncherTheme.hairline).frame(width: 1)
-            ClipboardPreview(item: model.selectedClipboardItem())
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if showsClipboardPreview {
+                Rectangle().fill(LauncherTheme.hairline).frame(width: 1)
+                ClipboardPreview(item: model.selectedClipboardItem())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
@@ -601,12 +604,25 @@ struct LauncherView: View {
                 .riffGlassButton()
                 .controlSize(.small)
 
+                Button {
+                    showsClipboardPreview.toggle()
+                } label: {
+                    Label(
+                        showsClipboardPreview ? "收起预览" : "显示预览",
+                        systemImage: showsClipboardPreview
+                            ? "rectangle.right.third.inset.filled"
+                            : "rectangle.split.2x1"
+                    )
+                }
+                .riffGlassButton()
+                .controlSize(.small)
+
                 if model.clipboardStorageError != nil {
                     Label("保存异常", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .help(model.clipboardStorageError ?? "")
                 } else {
-                    Text("\(model.clipboardHistoryCount) 条 · 仅存此 Mac")
+                    Text("\(model.clipboardHistoryCount) 条 · 仅存此 Mac · 滚动浏览全部")
                         .foregroundStyle(LauncherTheme.secondary)
                 }
             } else {

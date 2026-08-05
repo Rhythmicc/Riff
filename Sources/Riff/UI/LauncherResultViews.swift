@@ -187,34 +187,32 @@ struct ClipboardRow: View {
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             if let url = item.imagePreviewURL,
                let image = LauncherImageCache.shared.preview(for: url) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 42, height: 42)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .strokeBorder(LauncherTheme.hairline, lineWidth: 0.5)
                     }
             } else {
                 Image(systemName: item.kind.symbol)
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(LauncherTheme.secondary)
-                    .frame(width: 42)
+                    .frame(width: 34)
             }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.summary.replacingOccurrences(of: "\n", with: " "))
-                    .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(LauncherTheme.primary)
-                    .lineLimit(2)
-            }
+            Text(item.summary.replacingOccurrences(of: "\n", with: " "))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(LauncherTheme.primary)
+                .lineLimit(1)
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .frame(height: 67)
+        .padding(.horizontal, 12)
+        .frame(height: 46)
         .riffSelectedSurface(selected, cornerRadius: 10)
         .contentShape(Rectangle())
     }
@@ -233,7 +231,7 @@ struct ClipboardSectionHeader: View {
                 .frame(height: 1)
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(LauncherTheme.sidebarSurface)
     }
 }
