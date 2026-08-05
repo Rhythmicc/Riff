@@ -354,7 +354,7 @@ final class AppModel: ObservableObject {
                 query: "",
                 mode: .clipboard,
                 selectedIndex: 0,
-                content: .clipboard(Array(clipboard.items.prefix(7)))
+                content: .clipboard(clipboard.items)
             )
         case .password:
             publishPassword(PasswordRequest(), query: "")
@@ -1102,7 +1102,7 @@ final class AppModel: ObservableObject {
     }
 
     private func publishClipboard(query: String) {
-        let items = Array(clipboard.filtered(by: query).prefix(7))
+        let items = clipboard.filtered(by: query)
         state = LauncherState(
             query: query,
             mode: .clipboard,
