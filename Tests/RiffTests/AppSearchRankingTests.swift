@@ -85,4 +85,23 @@ final class AppSearchRankingTests: XCTestCase {
         XCTAssertNotNil(score)
         XCTAssertGreaterThan(score ?? 0, 0)
     }
+
+    func testShortQueryMaSurfacesAppleMailInsteadOfSystemOperations() async throws {
+        let applications = [
+            makeApplication(
+                path: "/System/Applications/Mail.app",
+                name: "Mail",
+                bundleIdentifier: "com.apple.mail",
+                aliases: ["mail", "邮箱"]
+            )
+        ]
+        let search = ApplicationSearch()
+        _ = await search.replaceApplications(applications, runningBundleIdentifiers: [])
+
+        XCTAssertTrue(SystemOperation.matching("ma").isEmpty)
+        let maResults = await search.search("ma")
+        XCTAssertEqual(maResults.map(\.name), ["Mail"])
+        let aliasResults = await search.search("邮箱")
+        XCTAssertEqual(aliasResults.map(\.name), ["Mail"])
+    }
 }

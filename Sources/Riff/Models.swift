@@ -154,8 +154,12 @@ enum SystemOperation: String, CaseIterable, Identifiable, Sendable {
             .lowercased()
         guard !normalized.isEmpty else { return [] }
 
+        // Short pure-ASCII prefixes are too ambiguous: `ma` must not hijack
+        // the launcher by prefixing the compound keyword "mac 睡眠". CJK
+        // prefixes stay loose (睡 → 睡眠), and three or more ASCII characters
+        // still allow keyword prefix matching (mac → mac 睡眠).
         let canUsePrefix = normalized.unicodeScalars.contains { $0.properties.isIdeographic }
-            || normalized.count >= 2
+            || normalized.count >= 3
         return allCases.filter { operation in
             operation.keywords.contains { keyword in
                 normalized == keyword

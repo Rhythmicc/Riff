@@ -44,6 +44,9 @@ final class LauncherArchitectureTests: XCTestCase {
         XCTAssertTrue(SystemOperation.matching("s").isEmpty)
         XCTAssertTrue(SystemOperation.matching("sys").isEmpty)
         XCTAssertTrue(SystemOperation.matching("Safari").isEmpty)
+        XCTAssertTrue(SystemOperation.matching("ma").isEmpty)
+        XCTAssertEqual(SystemOperation.matching("睡"), [.sleep])
+        XCTAssertEqual(SystemOperation.matching("mac"), [.sleep])
 
         if case .applications(let actions) = LauncherQueryClassifier.classify("sys") {
             XCTAssertTrue(actions.isEmpty)

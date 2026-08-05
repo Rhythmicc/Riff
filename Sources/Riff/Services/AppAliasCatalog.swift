@@ -5,7 +5,8 @@ import Foundation
 /// Keyed by bundle identifier so the aliases survive app renames.
 enum AppAliasCatalog {
     private static let aliasesByBundleIdentifier: [String: [String]] = [
-        "com.tencent.xinWeChat": ["wechat", "weixin"]
+        "com.tencent.xinWeChat": ["wechat", "weixin"],
+        "com.apple.mail": ["mail", "邮箱"]
     ]
 
     static func aliases(for bundleIdentifier: String) -> [String] {
