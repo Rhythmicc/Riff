@@ -285,6 +285,61 @@ struct ClipboardItem: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// Coarse time buckets for the clipboard history sidebar, giving a basic time
+/// hint without putting a date under every row.
+enum ClipboardTimeBucket: Int, CaseIterable, Sendable {
+    case today
+    case yesterday
+    case thisWeek
+    case thisMonth
+    case thisYear
+    case older
+
+    var title: String {
+        switch self {
+        case .today: return "今天"
+        case .yesterday: return "昨天"
+        case .thisWeek: return "本周"
+        case .thisMonth: return "本月"
+        case .thisYear: return "今年"
+        case .older: return "更早"
+        }
+    }
+
+    static func bucket(
+        for date: Date,
+        calendar: Calendar = .current,
+        now: Date = Date()
+    ) -> ClipboardTimeBucket {
+        if calendar.isDate(date, equalTo: now, toGranularity: .day) { return .today }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, equalTo: yesterday, toGranularity: .day) {
+            return .yesterday
+        }
+        if calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear) { return .thisWeek }
+        if calendar.isDate(date, equalTo: now, toGranularity: .month) { return .thisMonth }
+        if calendar.isDate(date, equalTo: now, toGranularity: .year) { return .thisYear }
+        return .older
+    }
+}
+
+struct ClipboardSection: Identifiable, Sendable {
+    let bucket: ClipboardTimeBucket
+    let items: [ClipboardItem]
+
+    var id: ClipboardTimeBucket { bucket }
+
+    static func sections(for items: [ClipboardItem]) -> [ClipboardSection] {
+        var grouped: [ClipboardTimeBucket: [ClipboardItem]] = [:]
+        for item in items {
+            grouped[ClipboardTimeBucket.bucket(for: item.createdAt), default: []].append(item)
+        }
+        return ClipboardTimeBucket.allCases.compactMap { bucket in
+            grouped[bucket].map { ClipboardSection(bucket: bucket, items: $0) }
+        }
+    }
+}
+
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     case openAI
     case openRouter

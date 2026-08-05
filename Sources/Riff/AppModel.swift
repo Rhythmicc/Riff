@@ -117,6 +117,10 @@ final class AppModel: ObservableObject {
         return items
     }
 
+    var clipboardSections: [ClipboardSection] {
+        ClipboardSection.sections(for: filteredClipboard)
+    }
+
     var calculation: String? {
         guard case .calculation(let value) = state.content else { return nil }
         return value

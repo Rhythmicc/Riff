@@ -4,6 +4,7 @@ import SwiftUI
 struct LauncherView: View {
     static let designSize = CGSize(width: 840, height: 650)
     static let collapsedDesignHeight: CGFloat = 74
+    static let clipboardDesignHeight: CGFloat = 820
     static let scale: CGFloat = 0.84
     static let unicodeGridColumnCount = 8
     static let candidateRowDesignHeight: CGFloat = 56
@@ -117,7 +118,10 @@ struct LauncherView: View {
         if model.isComponentQuery {
             return Self.resultDesignHeight(rowCount: model.resultCount)
         }
-        if model.mode == .clipboard || model.isGraphQuery {
+        if model.mode == .clipboard {
+            return Self.clipboardDesignHeight
+        }
+        if model.isGraphQuery {
             return Self.designSize.height
         }
         if model.isUnicodeQuery {
@@ -251,25 +255,51 @@ struct LauncherView: View {
 
     private var clipboardResults: some View {
         HStack(spacing: 0) {
-            resultList(model.filteredClipboard) { index, item in
-                Button {
-                    model.selectedIndex = index
-                } label: {
-                    ClipboardRow(item: item, selected: model.selectedIndex == index)
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("删除这条记录", role: .destructive) {
-                        model.removeClipboardItem(item)
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(model.clipboardSections) { section in
+                        Section {
+                            ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
+                                let flatIndex = flatClipboardIndex(for: section, itemIndex: index)
+                                Button {
+                                    model.selectedIndex = flatIndex
+                                } label: {
+                                    ClipboardRow(
+                                        item: item,
+                                        selected: model.selectedIndex == flatIndex
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("删除这条记录", role: .destructive) {
+                                        model.removeClipboardItem(item)
+                                    }
+                                }
+                            }
+                        } header: {
+                            ClipboardSectionHeader(title: section.bucket.title)
+                        }
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             }
-            .frame(width: 480)
+            .scrollIndicators(.visible)
+            .frame(width: 520)
 
             Rectangle().fill(LauncherTheme.hairline).frame(width: 1)
             ClipboardPreview(item: model.selectedClipboardItem())
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func flatClipboardIndex(for target: ClipboardSection, itemIndex: Int) -> Int {
+        var offset = 0
+        for section in model.clipboardSections {
+            if section.id == target.id { return offset + itemIndex }
+            offset += section.items.count
+        }
+        return offset + itemIndex
     }
 
     private var inferredResults: some View {

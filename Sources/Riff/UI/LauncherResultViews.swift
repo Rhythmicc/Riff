@@ -210,9 +210,6 @@ struct ClipboardRow: View {
                     .font(.system(size: 14.5, weight: .medium))
                     .foregroundStyle(LauncherTheme.primary)
                     .lineLimit(2)
-                Text(item.createdAt, style: .relative)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(LauncherTheme.secondary)
             }
             Spacer()
         }
@@ -220,6 +217,24 @@ struct ClipboardRow: View {
         .frame(height: 67)
         .riffSelectedSurface(selected, cornerRadius: 10)
         .contentShape(Rectangle())
+    }
+}
+
+struct ClipboardSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LauncherTheme.secondary)
+            Rectangle()
+                .fill(LauncherTheme.hairline)
+                .frame(height: 1)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .background(LauncherTheme.sidebarSurface)
     }
 }
 
