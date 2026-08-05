@@ -59,4 +59,48 @@ final class FuzzyMatcherTests: XCTestCase {
 
         XCTAssertGreaterThan(nameScore, bundleScore)
     }
+
+    func testShortQueriesRequireComponentBoundary() {
+        XCTAssertNil(FuzzyMatcher.score(
+            query: "we",
+            candidate: "Microsoft PowerPoint",
+            requireBoundaryForShortQueries: true
+        ))
+        XCTAssertNil(FuzzyMatcher.score(
+            query: "we",
+            candidate: "Dowine 4",
+            requireBoundaryForShortQueries: true
+        ))
+        XCTAssertNotNil(FuzzyMatcher.score(
+            query: "we",
+            candidate: "Welly",
+            requireBoundaryForShortQueries: true
+        ))
+        XCTAssertNil(FuzzyMatcher.contiguousScore(
+            query: "we",
+            candidate: "pl.maketheweb.cleanshotx",
+            requireBoundaryForShortQueries: true
+        ))
+        XCTAssertNotNil(FuzzyMatcher.contiguousScore(
+            query: "we",
+            candidate: "com.tencent.xinWeChat",
+            requireBoundaryForShortQueries: true
+        ))
+    }
+
+    func testInteriorMatchesStillWorkForLongerQueries() {
+        XCTAssertNotNil(FuzzyMatcher.score(
+            query: "ower",
+            candidate: "Microsoft PowerPoint",
+            requireBoundaryForShortQueries: true
+        ))
+    }
+
+    func testWechatAliasCatalog() {
+        XCTAssertEqual(
+            AppAliasCatalog.aliases(for: "com.tencent.xinWeChat"),
+            ["wechat", "weixin"]
+        )
+        XCTAssertTrue(AppAliasCatalog.aliases(for: "com.unknown.example").isEmpty)
+    }
 }

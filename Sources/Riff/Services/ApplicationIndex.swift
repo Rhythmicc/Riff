@@ -111,10 +111,12 @@ final class ApplicationIndex {
             let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
             let fallback = url.deletingPathExtension().lastPathComponent
+            let bundleIdentifier = bundle?.bundleIdentifier
             return ApplicationRecord(
                 url: url,
                 name: displayName ?? bundleName ?? fallback,
-                bundleIdentifier: bundle?.bundleIdentifier
+                bundleIdentifier: bundleIdentifier,
+                aliases: bundleIdentifier.flatMap(AppAliasCatalog.aliases(for:)) ?? []
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

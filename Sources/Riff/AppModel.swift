@@ -33,6 +33,7 @@ final class AppModel: ObservableObject {
     private var graphTask: Task<Void, Never>?
     private var unicodeSearchTask: Task<Void, Never>?
     private var aiAnswerTask: Task<Void, Never>?
+    private var componentTask: Task<Void, Never>?
     private var clipboardCancellable: AnyCancellable?
     private var indexedApplications: [ApplicationRecord] = []
     private var indexedRunningBundleIdentifiers = Set<String>()
@@ -181,6 +182,21 @@ final class AppModel: ObservableObject {
         return false
     }
 
+    var componentItems: [ComponentResultItem] {
+        if case .component(_, _, let results, _) = state.content { return results }
+        return []
+    }
+
+    var componentIsLoading: Bool {
+        if case .component(_, _, _, let isLoading) = state.content { return isLoading }
+        return false
+    }
+
+    var isComponentQuery: Bool {
+        if case .component = state.content { return true }
+        return false
+    }
+
     var isGraphQuery: Bool {
         if case .graph = state.content { return true }
         return false
@@ -268,7 +284,7 @@ final class AppModel: ObservableObject {
 
     var hasInferredContent: Bool {
         switch state.content {
-        case .calculation, .currency, .graph, .unicode, .password, .aiAnswer: return true
+        case .calculation, .currency, .graph, .unicode, .password, .aiAnswer, .component: return true
         case .idle, .systemOperations, .fallback, .applications, .clipboard: return false
         }
     }
@@ -284,6 +300,7 @@ final class AppModel: ObservableObject {
         case .clipboard(let items): return items.count
         case .calculation, .currency, .password: return 1
         case .unicode(_, let items, _): return items.count
+        case .component(_, _, let results, _): return results.count
         }
     }
 
@@ -464,6 +481,26 @@ final class AppModel: ObservableObject {
             recordSuccessfulActivation()
             clipboard.copy(items[state.selectedIndex])
             return true
+        case .component(let componentID, _, let results, let isLoading):
+            guard !isLoading, results.indices.contains(state.selectedIndex) else { return false }
+            let item = results[state.selectedIndex]
+            guard let action = item.actions.first else { return false }
+            recordSuccessfulActivation()
+            switch action {
+            case .copy(let text):
+                copyText(text)
+                return true
+            case .openURL(let url):
+                NSWorkspace.shared.open(url)
+                return true
+            case .callback:
+                Task { [weak self] in
+                    try? await self?.componentManager.component(id: componentID)?.perform(action)
+                }
+                return false
+            case .openPanel:
+                return false
+            }
         case .idle, .currency, .graph, .password:
             return false
         }
@@ -506,11 +543,32 @@ final class AppModel: ObservableObject {
         query: String,
         application: ApplicationRecord
     ) -> Int? {
-        if let nameScore = FuzzyMatcher.score(query: query, candidate: application.name) {
+        let requireBoundary = query.count < 3
+        if let nameScore = FuzzyMatcher.score(
+            query: query,
+            candidate: application.name,
+            requireBoundaryForShortQueries: requireBoundary
+        ) {
             return 20_000 + nameScore
         }
+        if let aliasScore = application.aliases.compactMap({
+            FuzzyMatcher.score(
+                query: query,
+                candidate: $0,
+                requireBoundaryForShortQueries: requireBoundary
+            )
+        }).max() {
+            // Aliases rank with display names but just below the real name.
+            return 19_900 + aliasScore
+        }
         return application.bundleIdentifier
-            .flatMap { FuzzyMatcher.contiguousScore(query: query, candidate: $0) }
+            .flatMap {
+                FuzzyMatcher.contiguousScore(
+                    query: query,
+                    candidate: $0,
+                    requireBoundaryForShortQueries: requireBoundary
+                )
+            }
             .map { $0 - 500 }
     }
 
@@ -519,11 +577,23 @@ final class AppModel: ObservableObject {
         searchedResults: [ApplicationRecord],
         usageStore: LauncherUsageStore
     ) -> [ApplicationRecord] {
+        let requireBoundary = query.count < 3
         let nameMatches = searchedResults.filter {
-            FuzzyMatcher.score(query: query, candidate: $0.name) != nil
+            FuzzyMatcher.score(
+                query: query,
+                candidate: $0.name,
+                requireBoundaryForShortQueries: requireBoundary
+            ) != nil
+                || $0.aliases.contains {
+                    FuzzyMatcher.score(
+                        query: query,
+                        candidate: $0,
+                        requireBoundaryForShortQueries: requireBoundary
+                    ) != nil
+                }
         }
-        let bundleOnlyMatches = searchedResults.filter {
-            FuzzyMatcher.score(query: query, candidate: $0.name) == nil
+        let bundleOnlyMatches = searchedResults.filter { candidate in
+            !nameMatches.contains { $0.id == candidate.id }
         }
         return usageStore.sorted(nameMatches) { "app:\($0.id)" }
             + usageStore.sorted(bundleOnlyMatches) { "app:\($0.id)" }
@@ -607,6 +677,10 @@ final class AppModel: ObservableObject {
             )
 
         case .applications(let actions):
+            if let installedComponent = componentManager.installedMatch(newQuery, mode: .apps) {
+                startComponentResults(component: installedComponent, query: newQuery)
+                return
+            }
             let enabledActions = actions.filter { action in
                 guard let componentID = Self.componentID(for: action) else { return true }
                 return componentManager.isEnabled(componentID)
@@ -690,6 +764,58 @@ final class AppModel: ObservableObject {
                 content: .currency(result: nil, error: nil, isLoading: true)
             )
             startCurrencyConversion(conversion, requestedText: newQuery)
+        }
+    }
+
+    private func startComponentResults(
+        component: any RiffComponent,
+        query: String
+    ) {
+        componentTask?.cancel()
+        rankedApplications = []
+        state = LauncherState(
+            query: query,
+            mode: .apps,
+            selectedIndex: 0,
+            content: .component(
+                componentID: component.id,
+                query: query,
+                results: [],
+                isLoading: true
+            )
+        )
+        componentTask = Task { [weak self] in
+            do {
+                let results = try await component.results(for: query)
+                try Task.checkCancellation()
+                guard let self, self.state.query == query else { return }
+                self.state = LauncherState(
+                    query: query,
+                    mode: .apps,
+                    selectedIndex: 0,
+                    content: .component(
+                        componentID: component.id,
+                        query: query,
+                        results: results.items,
+                        isLoading: !results.isComplete
+                    )
+                )
+            } catch is CancellationError {
+                // Obsolete work; the current snapshot stays.
+            } catch {
+                guard let self, self.state.query == query else { return }
+                self.state = LauncherState(
+                    query: query,
+                    mode: .apps,
+                    selectedIndex: 0,
+                    content: .component(
+                        componentID: component.id,
+                        query: query,
+                        results: [],
+                        isLoading: false
+                    )
+                )
+            }
         }
     }
 
@@ -1000,6 +1126,7 @@ final class AppModel: ObservableObject {
         graphTask?.cancel()
         unicodeSearchTask?.cancel()
         aiAnswerTask?.cancel()
+        componentTask?.cancel()
     }
 
     private func recordSettledQueryIfNeeded() {

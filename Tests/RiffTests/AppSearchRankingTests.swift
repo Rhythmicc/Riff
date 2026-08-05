@@ -1,0 +1,88 @@
+import XCTest
+@testable import Riff
+
+@MainActor
+final class AppSearchRankingTests: XCTestCase {
+    private func makeApplication(
+        path: String,
+        name: String,
+        bundleIdentifier: String,
+        aliases: [String] = []
+    ) -> ApplicationRecord {
+        ApplicationRecord(
+            url: URL(fileURLWithPath: path),
+            name: name,
+            bundleIdentifier: bundleIdentifier,
+            aliases: aliases
+        )
+    }
+
+    func testShortQueryWechatSurfacesAloneFromInteriorMatches() async throws {
+        let applications = [
+            makeApplication(
+                path: "/Applications/Microsoft PowerPoint.app",
+                name: "Microsoft PowerPoint",
+                bundleIdentifier: "com.microsoft.Powerpoint"
+            ),
+            makeApplication(
+                path: "/Applications/Dowine 4.app",
+                name: "Dowine 4",
+                bundleIdentifier: "com.example.dowine4"
+            ),
+            makeApplication(
+                path: "/Applications/CleanShot X.app",
+                name: "CleanShot X",
+                bundleIdentifier: "pl.maketheweb.cleanshotx"
+            ),
+            makeApplication(
+                path: "/Applications/WeChat.app",
+                name: "微信",
+                bundleIdentifier: "com.tencent.xinWeChat",
+                aliases: ["wechat", "weixin"]
+            )
+        ]
+        let search = ApplicationSearch()
+        _ = await search.replaceApplications(applications, runningBundleIdentifiers: [])
+
+        let results = await search.search("we")
+
+        XCTAssertEqual(results.map(\.name), ["微信"])
+    }
+
+    func testWechatAliasMatchesAtNameLevelForRanking() async throws {
+        let wechat = makeApplication(
+            path: "/Applications/WeChat.app",
+            name: "微信",
+            bundleIdentifier: "com.tencent.xinWeChat",
+            aliases: ["wechat", "weixin"]
+        )
+        let suiteName = "AppSearchRankingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let usage = LauncherUsageStore(defaults: defaults, key: "ranking.test")
+
+        let ranked = AppModel.rankApplicationsForPresentation(
+            query: "we",
+            searchedResults: [wechat],
+            usageStore: usage
+        )
+
+        XCTAssertEqual(ranked.map(\.name), ["微信"])
+    }
+
+    func testApplicationScoreUsesAliasBeforeBundle() {
+        let wechat = makeApplication(
+            path: "/Applications/WeChat.app",
+            name: "微信",
+            bundleIdentifier: "com.tencent.xinWeChat",
+            aliases: ["wechat", "weixin"]
+        )
+
+        let score = AppModel.applicationScore(query: "we", application: wechat)
+
+        XCTAssertNotNil(score)
+        XCTAssertGreaterThan(score ?? 0, 0)
+    }
+}

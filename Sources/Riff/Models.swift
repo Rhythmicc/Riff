@@ -208,6 +208,7 @@ struct ApplicationRecord: Identifiable, Hashable, Sendable {
     let url: URL
     let name: String
     let bundleIdentifier: String?
+    var aliases: [String] = []
 
     var id: String { url.path }
 }
