@@ -40,6 +40,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
     case clipboard
     case translation
     case password
+    case chat
 
     var id: String { rawValue }
 
@@ -49,6 +50,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .clipboard: return "打开剪贴板历史"
         case .translation: return "打开翻译"
         case .password: return "生成随机密码"
+        case .chat: return "打开 AI 对话"
         }
     }
 
@@ -58,6 +60,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .clipboard: return "搜索、预览并复制历史内容"
         case .translation: return "返回当前翻译，或翻译选中的文本"
         case .password: return "生成一个 16 位安全随机密码"
+        case .chat: return "多轮对话、对话管理，可自选模型"
         }
     }
 
@@ -67,6 +70,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         case .clipboard: return "doc.on.clipboard"
         case .translation: return "character.book.closed"
         case .password: return "key.horizontal"
+        case .chat: return "bubble.left.and.bubble.right"
         }
     }
 
@@ -80,6 +84,8 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
             return ["翻译", "译文", "translate", "translation", "translator"]
         case .password:
             return ["密码", "口令", "password", "passwd", "随机密码", "生成密码"]
+        case .chat:
+            return ["对话", "聊天", "chat", "ai"]
         }
     }
 
@@ -278,6 +284,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     case openAI
     case openRouter
     case gemini
+    case deepSeek
 
     var id: String { rawValue }
 
@@ -286,14 +293,16 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: return "OpenAI"
         case .openRouter: return "OpenRouter"
         case .gemini: return "Gemini"
+        case .deepSeek: return "DeepSeek"
         }
     }
 
     var defaultModel: String {
         switch self {
         case .openAI: return "gpt-5.6-luna"
-        case .openRouter: return "~openai/gpt-latest"
+        case .openRouter: return "deepseek-v4-flash-0731"
         case .gemini: return "gemini-3.5-flash"
+        case .deepSeek: return "deepseek-v4-flash"
         }
     }
 }

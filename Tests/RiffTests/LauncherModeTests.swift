@@ -150,6 +150,23 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertEqual(LauncherQuickAction.matching("password"), [.password])
     }
 
+    func testChatQueriesOfferChatNavigation() {
+        XCTAssertEqual(LauncherQuickAction.matching("对话"), [.chat])
+        XCTAssertEqual(LauncherQuickAction.matching("chat"), [.chat])
+        XCTAssertEqual(LauncherQuickAction.matching("ai"), [.chat])
+    }
+
+    @MainActor
+    func testAIAnswerCommitRequiresCompletedAnswer() {
+        let model = AppModel(clipboard: ClipboardStore())
+        var committed = false
+        model.onCommitAIAnswerToChat = { _, _ in committed = true }
+
+        XCTAssertFalse(model.commitAIAnswerToChat())
+        XCTAssertFalse(committed)
+        XCTAssertFalse(model.canOpenChatAfterCommittedAIAnswer)
+    }
+
     @MainActor
     func testPasswordCommandEntersComponent() {
         let model = AppModel(clipboard: ClipboardStore())

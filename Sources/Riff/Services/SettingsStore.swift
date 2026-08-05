@@ -64,10 +64,20 @@ final class SettingsStore: ObservableObject {
             KeychainStore.set(apiKey, account: provider.rawValue)
         }
     }
+    @Published var tavilyApiKey: String {
+        didSet {
+            guard !isApplyingTavilyKeychainValue else { return }
+            KeychainStore.set(tavilyApiKey, account: Self.tavilyKeychainAccount)
+        }
+    }
 
     private let defaults: UserDefaults
     private var loadedKeyProvider: AIProvider?
     private var isApplyingKeychainValue = false
+    private var isApplyingTavilyKeychainValue = false
+    private var tavilyKeyLoaded = false
+
+    static let tavilyKeychainAccount = "tavily"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -106,6 +116,7 @@ final class SettingsStore: ObservableObject {
                 ?? AppearancePreferences.defaultGlassOpacity
         )
         apiKey = ""
+        tavilyApiKey = ""
     }
 
     func selectProvider(_ newProvider: AIProvider) {
@@ -129,6 +140,16 @@ final class SettingsStore: ObservableObject {
     func apiKeyForCurrentProvider() -> String {
         loadAPIKeyIfNeeded()
         return apiKey
+    }
+
+    func tavilyAPIKey() -> String {
+        guard !tavilyKeyLoaded else { return tavilyApiKey }
+        let storedValue = KeychainStore.get(account: Self.tavilyKeychainAccount)
+        isApplyingTavilyKeychainValue = true
+        tavilyApiKey = storedValue
+        isApplyingTavilyKeychainValue = false
+        tavilyKeyLoaded = true
+        return tavilyApiKey
     }
 
     func saveModel() {

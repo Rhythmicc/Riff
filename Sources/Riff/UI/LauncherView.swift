@@ -369,6 +369,20 @@ struct LauncherView: View {
                     textColor: .labelColor
                 )
             }
+
+            if !model.isLoadingAIAnswer,
+               model.aiAnswerError == nil,
+               !model.aiAnswerResult.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                    Text(model.aiAnswerCommittedToChat
+                        ? "已加入 AI 对话 · 按 ⌘J 继续追问"
+                        : "回答完成 · 按 ⌘J 加入对话并继续追问（也可先按 Tab 提交）")
+                    Spacer()
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(LauncherTheme.secondary)
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

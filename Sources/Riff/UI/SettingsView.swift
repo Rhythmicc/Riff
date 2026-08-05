@@ -102,6 +102,34 @@ struct SettingsView: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Tavily 搜索 Key（可选）")
+                            Spacer()
+                            if !settings.tavilyApiKey.isEmpty {
+                                Text("已配置")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(LauncherTheme.secondary)
+                            }
+                        }
+                        HStack {
+                            SecureField("留空则使用 Tavily keyless 免费模式", text: $settings.tavilyApiKey)
+                                .textFieldStyle(.roundedBorder)
+                            Button("粘贴") { pasteTavilyKey() }
+                                .help("从剪贴板粘贴 Tavily API Key")
+                            if !settings.tavilyApiKey.isEmpty {
+                                Button {
+                                    settings.tavilyApiKey = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(LauncherTheme.secondary)
+                                .help("清除 Tavily API Key")
+                            }
+                        }
+                    }
+
                     Picker("母语", selection: $settings.nativeLanguage) {
                         ForEach(TranslationLanguage.allCases) { language in
                             Text(language.title).tag(language)
@@ -359,6 +387,14 @@ struct SettingsView: View {
             return
         }
         settings.apiKey = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func pasteTavilyKey() {
+        guard let value = NSPasteboard.general.string(forType: .string) else {
+            NSSound.beep()
+            return
+        }
+        settings.tavilyApiKey = value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func refreshAccessibilityStatus() {

@@ -49,4 +49,26 @@ final class RichTextRendererTests: XCTestCase {
 
         XCTAssertEqual(rendered, source)
     }
+
+    func testRendersMarkdownTableWithoutRawSyntax() {
+        let source = """
+        | 数字 | 字符 | 码点 |
+        |------|------|------|
+        | 1 | ❶ | U+2776 |
+        | 2 | ❷ | U+2777 |
+        """
+
+        let rendered = RichTextRenderer.render(
+            source,
+            syntax: .markdownAndMath,
+            fontSize: 17,
+            textColor: .labelColor
+        ).string
+
+        XCTAssertTrue(rendered.contains("数字"))
+        XCTAssertTrue(rendered.contains("❶"))
+        XCTAssertTrue(rendered.contains("U+2776"))
+        XCTAssertFalse(rendered.contains("|"))
+        XCTAssertFalse(rendered.contains("------"))
+    }
 }

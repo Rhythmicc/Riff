@@ -6,6 +6,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
     case clipboard
     case translation
     case note
+    case chat
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         case .clipboard: "剪贴板历史"
         case .translation: "翻译选中文本"
         case .note: "置顶便笺"
+        case .chat: "AI 对话"
         }
     }
 
@@ -24,6 +26,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable, Codable {
         case .clipboard: 2
         case .translation: 3
         case .note: 4
+        case .chat: 5
         }
     }
 }
@@ -94,7 +97,8 @@ final class ShortcutStore: ObservableObject {
         .launcher: .doubleShift,
         .clipboard: .disabled,
         .translation: .key(17, modifiers: UInt32(cmdKey | shiftKey), label: "T"),
-        .note: .disabled
+        .note: .disabled,
+        .chat: .disabled
     ]
 
     private static let legacyDefaultBindings: [ShortcutAction: ShortcutBinding] = [

@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     let clipboard: ClipboardStore
     var onOpenNote: (() -> Void)?
     var onOpenTranslation: (() -> Void)?
+    var onOpenChat: (() -> Void)?
+    var onCommitAIAnswerToChat: ((String, String) -> Void)?
     var onPerformSystemOperation: ((SystemOperation) -> Void)?
 
     private let applicationIndex: ApplicationIndex
@@ -23,6 +25,7 @@ final class AppModel: ObservableObject {
     private let usageStore: LauncherUsageStore
     private let experienceMetrics: ExperienceMetricsStore?
     private weak var settings: SettingsStore?
+    private var noteModel: NoteModel?
     private var applicationRefreshTask: Task<Void, Never>?
     private var applicationSearchTask: Task<Void, Never>?
     private var currencyTask: Task<Void, Never>?
@@ -42,12 +45,14 @@ final class AppModel: ObservableObject {
     init(
         clipboard: ClipboardStore,
         settings: SettingsStore? = nil,
+        noteModel: NoteModel? = nil,
         usageStore: LauncherUsageStore? = nil,
         experienceMetrics: ExperienceMetricsStore? = nil,
         applicationIndex: ApplicationIndex = ApplicationIndex()
     ) {
         self.clipboard = clipboard
         self.settings = settings
+        self.noteModel = noteModel
         self.usageStore = usageStore ?? LauncherUsageStore()
         self.experienceMetrics = experienceMetrics
         self.applicationIndex = applicationIndex
@@ -203,6 +208,28 @@ final class AppModel: ObservableObject {
     var isAIAnswer: Bool {
         if case .aiAnswer = state.content { return true }
         return false
+    }
+
+    /// Set when the user presses Tab after the first launcher AI answer
+    /// completes, which commits the exchange to the chat component and unlocks
+    /// ⌘J as the launcher-local shortcut that opens the chat window.
+    private(set) var aiAnswerCommittedToChat = false
+
+    var canOpenChatAfterCommittedAIAnswer: Bool {
+        aiAnswerCommittedToChat
+    }
+
+    @discardableResult
+    func commitAIAnswerToChat() -> Bool {
+        guard case .aiAnswer(_, _, let result, _, let isLoading) = state.content,
+              !isLoading,
+              !result.isEmpty else { return false }
+        if !aiAnswerCommittedToChat {
+            let question = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
+            aiAnswerCommittedToChat = true
+            onCommitAIAnswerToChat?(question, result)
+        }
+        return true
     }
 
     var aiAnswerResult: String {
@@ -416,6 +443,10 @@ final class AppModel: ObservableObject {
                         query: PasswordRequest.parameterText(from: state.query)
                     )
                     return false
+                case .chat:
+                    recordSuccessfulActivation()
+                    onOpenChat?()
+                    return true
                 }
             }
             let applicationOffset = state.selectedIndex - actions.count
@@ -505,6 +536,9 @@ final class AppModel: ObservableObject {
         recordsMetrics: Bool = true
     ) {
         guard force || newQuery != state.query else { return }
+        if newQuery != state.query {
+            aiAnswerCommittedToChat = false
+        }
         let oldState = state
         cancelPendingWork()
         applicationResultLimit = 8
@@ -729,6 +763,7 @@ final class AppModel: ObservableObject {
         let provider = settings.provider
         let model = settings.model
         let apiKey = settings.apiKeyForCurrentProvider()
+        let tavilyKey = settings.tavilyAPIKey()
         aiAnswerTask?.cancel()
         aiStreamBuffer = ""
         lastAIStreamPublish = .distantPast
@@ -748,8 +783,15 @@ final class AppModel: ObservableObject {
         aiAnswerTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let answer = try await aiService.answer(
+                let answer = try await aiService.answerWithTools(
                     query: query,
+                    tools: RiffToolRegistry.tools(
+                        provider: provider,
+                        model: model,
+                        apiKey: apiKey,
+                        tavilyAPIKey: tavilyKey,
+                        noteModel: noteModel
+                    ),
                     provider: provider,
                     model: model,
                     apiKey: apiKey,

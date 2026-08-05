@@ -8,9 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launcherController: LauncherPanelController!
     private var noteController: NotePanelController!
     private var translationController: TranslationPanelController!
+    private var chatController: ChatPanelController!
     private var settingsController: SettingsPanelController!
     private var noteModel: NoteModel!
     private var translationModel: TranslationModel!
+    private var chatModel: ChatModel!
     private var hotKeys: [GlobalHotKey] = []
     private var doubleShiftHotKey: DoubleShiftHotKey?
     private var shortcutMonitor: GlobalShortcutMonitor?
@@ -32,17 +34,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         configureMainMenu()
 
+        noteModel = NoteModel()
+        translationModel = TranslationModel(settings: settings)
+        chatModel = ChatModel(settings: settings, noteModel: noteModel)
         let model = AppModel(
             clipboard: clipboard,
             settings: settings,
+            noteModel: noteModel,
             experienceMetrics: experienceMetrics
         )
-        noteModel = NoteModel()
-        translationModel = TranslationModel(settings: settings)
 
         noteController = NotePanelController(model: noteModel, settings: settings)
+        chatController = ChatPanelController(model: chatModel)
         model.onOpenNote = { [weak self] in self?.openNoteFromLauncher() }
         model.onOpenTranslation = { [weak self] in self?.openTranslationFromLauncher() }
+        model.onOpenChat = { [weak self] in self?.openChatFromLauncher() }
+        model.onCommitAIAnswerToChat = { [weak self] question, answer in
+            self?.chatModel.importInquiry(question: question, answer: answer)
+        }
         model.onPerformSystemOperation = { [weak self] operation in
             DispatchQueue.main.async {
                 self?.systemOperationExecutor.perform(operation)
@@ -196,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("剪贴板历史（\(shortcuts.binding(for: .clipboard).displayName)）", action: #selector(openClipboard), shortcut: "", modifiers: []))
         menu.addItem(menuItem("翻译选中文本（\(shortcuts.binding(for: .translation).displayName)）", action: #selector(openTranslation), shortcut: "", modifiers: []))
         menu.addItem(menuItem("置顶便笺（\(shortcuts.binding(for: .note).displayName)）", action: #selector(toggleNote), shortcut: "", modifiers: []))
+        menu.addItem(menuItem("AI 对话（\(shortcuts.binding(for: .chat).displayName)）", action: #selector(openChat), shortcut: "", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(menuItem("设置…", action: #selector(openSettings), shortcut: ",", modifiers: .command))
         menu.addItem(.separator())
@@ -316,6 +326,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         noteController.show()
     }
 
+    private func openChatFromLauncher() {
+        launcherController?.dismiss()
+        chatController.show()
+    }
+
     private func perform(_ action: ShortcutAction) {
         let settingsIsKey = settingsController?.panel.isKeyWindow == true
         DiagnosticLogger.shared.log("shortcut", "perform action=\(action.rawValue) settingsIsKey=\(settingsIsKey)")
@@ -328,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .clipboard: launcherController.show(mode: .clipboard)
         case .translation: showTranslation()
         case .note: noteController.toggle()
+        case .chat: chatController.toggle()
         }
     }
 
@@ -335,6 +351,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openClipboard() { launcherController.show(mode: .clipboard) }
     @objc private func openTranslation() { showTranslation() }
     @objc private func toggleNote() { noteController.toggle() }
+    @objc private func openChat() { chatController.toggle() }
     @objc private func openSettings() { settingsController.show() }
     @objc private func closeCurrentWindow() {
         if NSApp.keyWindow === launcherController?.panel {

@@ -24,6 +24,7 @@ final class ShortcutStoreTests: XCTestCase {
         XCTAssertEqual(store.binding(for: .clipboard), .disabled)
         XCTAssertEqual(store.binding(for: .translation).displayName, "⌘ ⇧ T")
         XCTAssertEqual(store.binding(for: .note), .disabled)
+        XCTAssertEqual(store.binding(for: .chat), .disabled)
     }
 
     func testUpdatePersistsAcrossStoreInstances() {

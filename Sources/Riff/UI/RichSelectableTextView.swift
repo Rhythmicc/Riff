@@ -175,12 +175,37 @@ enum RichTextRenderer {
         let output = NSMutableAttributedString()
         let lines = source.components(separatedBy: .newlines)
         var isInsideCodeBlock = false
+        var index = 0
 
-        for (index, originalLine) in lines.enumerated() {
+        while index < lines.count {
+            let originalLine = lines[index]
             let trimmed = originalLine.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("```") {
                 isInsideCodeBlock.toggle()
                 if index < lines.count - 1, output.length > 0 { output.append(NSAttributedString(string: "\n")) }
+                index += 1
+                continue
+            }
+
+            if !isInsideCodeBlock, looksLikeTableStart(lines, at: index) {
+                var blockEnd = index
+                var rows: [[String]] = []
+                while blockEnd < lines.count, lines[blockEnd].contains("|") {
+                    rows.append(tableCells(in: lines[blockEnd]))
+                    blockEnd += 1
+                }
+                if output.length > 0, !output.string.hasSuffix("\n") {
+                    output.append(NSAttributedString(string: "\n"))
+                }
+                output.append(renderTable(
+                    rows: rows,
+                    fontSize: fontSize,
+                    textColor: textColor
+                ))
+                if blockEnd < lines.count {
+                    output.append(NSAttributedString(string: "\n"))
+                }
+                index = blockEnd
                 continue
             }
 
@@ -243,9 +268,192 @@ enum RichTextRenderer {
             if lineRange.length > 0 {
                 output.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
             }
+            index += 1
         }
 
         return output
+    }
+
+    // MARK: - Markdown tables
+
+    private static func looksLikeTableStart(_ lines: [String], at index: Int) -> Bool {
+        guard lines[index].contains("|"), index + 1 < lines.count else { return false }
+        return isTableSeparatorRow(lines[index + 1])
+    }
+
+    private static func isTableSeparatorRow(_ line: String) -> Bool {
+        guard line.contains("|") else { return false }
+        let cells = tableCells(in: line)
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            let trimmed = cell.trimmingCharacters(in: .whitespaces)
+            return !trimmed.isEmpty
+                && trimmed.allSatisfy { $0 == "-" || $0 == ":" }
+        }
+    }
+
+    private static func tableCells(in line: String) -> [String] {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func renderTable(
+        rows: [[String]],
+        fontSize: CGFloat,
+        textColor: NSColor
+    ) -> NSAttributedString {
+        guard !rows.isEmpty else { return NSAttributedString() }
+        let columnCount = max(rows.map(\.count).max() ?? 1, 1)
+        let cellFont = NSFont.systemFont(ofSize: fontSize - 0.5)
+        let headerFont = NSFont.systemFont(ofSize: fontSize - 0.5, weight: .semibold)
+        let secondaryColor = textColor.withAlphaComponent(0.72)
+        let cellPadding: CGFloat = 14
+
+        var widths = [CGFloat](repeating: 0, count: columnCount)
+        for (rowIndex, row) in rows.enumerated() {
+            let isHeader = rowIndex == 0
+            for (column, cell) in row.enumerated() where column < columnCount {
+                let font = isHeader ? headerFont : cellFont
+                let attributed = renderInlineMarkdown(cell, font: font, textColor: textColor)
+                widths[column] = max(widths[column], attributed.size().width)
+            }
+        }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = max(2, fontSize * 0.18)
+        paragraph.paragraphSpacing = 2
+        var tabStops: [NSTextTab] = []
+        var offset: CGFloat = 0
+        for column in 0..<max(0, columnCount - 1) {
+            offset += widths[column] + cellPadding
+            tabStops.append(NSTextTab(textAlignment: .left, location: offset))
+        }
+        paragraph.tabStops = tabStops
+
+        let output = NSMutableAttributedString()
+        for (rowIndex, row) in rows.enumerated() {
+            if rowIndex == 1 { continue } // separator row becomes the divider below
+            let isHeader = rowIndex == 0
+            let cells = (0..<columnCount).map { column in
+                column < row.count ? row[column] : ""
+            }
+            let font = isHeader ? headerFont : cellFont
+            let color = isHeader ? textColor : textColor.withAlphaComponent(0.94)
+
+            // Wrap each cell independently, then emit one tab-aligned text line
+            // per wrapped row so long content stays inside the bubble.
+            let wrapped = cells.enumerated().map { column, cell in
+                wrappedLines(cell, font: font, width: widths[column])
+            }
+            let lineCount = wrapped.map(\.count).max() ?? 1
+            for lineIndex in 0..<lineCount {
+                let line = NSMutableAttributedString()
+                for column in 0..<columnCount {
+                    if column > 0 { line.append(NSAttributedString(string: "\t")) }
+                    let cellText = lineIndex < wrapped[column].count
+                        ? wrapped[column][lineIndex]
+                        : ""
+                    line.append(renderInlineMarkdown(cellText, font: font, textColor: color))
+                }
+                let fullRange = NSRange(location: 0, length: line.length)
+                line.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
+                output.append(line)
+                output.append(NSAttributedString(string: "\n"))
+            }
+
+            if isHeader {
+                let totalWidth = widths.reduce(0, +) + cellPadding * CGFloat(max(0, columnCount - 1))
+                let dashWidth = (("─" as NSString).size(withAttributes: [.font: cellFont]).width)
+                let dashCount = max(1, Int(totalWidth / max(dashWidth, 1)))
+                let divider = String(repeating: "─", count: dashCount)
+                let dividerAttributes: [NSAttributedString.Key: Any] = [
+                    .font: cellFont,
+                    .foregroundColor: secondaryColor,
+                    .paragraphStyle: paragraph
+                ]
+                output.append(NSAttributedString(string: divider, attributes: dividerAttributes))
+                output.append(NSAttributedString(string: "\n"))
+            }
+        }
+        if output.length > 0, output.string.hasSuffix("\n") {
+            output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
+        }
+        return output
+    }
+
+    private static func wrappedLines(
+        _ text: String,
+        font: NSFont,
+        width: CGFloat
+    ) -> [String] {
+        guard !text.isEmpty else { return [""] }
+        guard width > 10 else { return [text] }
+
+        // Prefer word boundaries so Latin words are not split mid-word.
+        let words = text.split(omittingEmptySubsequences: false) { $0.isWhitespace }
+        var lines: [String] = []
+        var current = ""
+        var currentWidth: CGFloat = 0
+        for word in words {
+            let wordString = String(word)
+            let wordWidth = (wordString as NSString)
+                .size(withAttributes: [.font: font])
+                .width
+            let separatorWidth = current.isEmpty
+                ? 0
+                : (" " as NSString).size(withAttributes: [.font: font]).width
+            if currentWidth + separatorWidth + wordWidth > width, !current.isEmpty {
+                lines.append(current)
+                current = wordString
+                currentWidth = wordWidth
+            } else {
+                current += (current.isEmpty ? "" : " ") + wordString
+                currentWidth += separatorWidth + wordWidth
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+
+        // A single overlong word (for example a URL) still needs char wrapping.
+        var result: [String] = []
+        for line in lines {
+            let lineWidth = (line as NSString).size(withAttributes: [.font: font]).width
+            if lineWidth <= width || !line.contains(" ") {
+                result.append(line)
+            } else {
+                result.append(contentsOf: charWrapped(line, font: font, width: width))
+            }
+        }
+        return result.isEmpty ? [text] : result
+    }
+
+    private static func charWrapped(
+        _ text: String,
+        font: NSFont,
+        width: CGFloat
+    ) -> [String] {
+        var lines: [String] = []
+        var current = ""
+        var currentWidth: CGFloat = 0
+        for character in text {
+            let characterString = String(character)
+            let characterWidth = (characterString as NSString)
+                .size(withAttributes: [.font: font])
+                .width
+            if currentWidth + characterWidth > width, !current.isEmpty {
+                lines.append(current)
+                current = characterString
+                currentWidth = characterWidth
+            } else {
+                current += characterString
+                currentWidth += characterWidth
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.isEmpty ? [text] : lines
     }
 
     private static func renderInlineMathAndMarkdown(

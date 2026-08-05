@@ -74,13 +74,16 @@ enum LauncherMotion {
 class MaterialPanelController {
     let panel: KeyablePanel
     private let activatesApplication: Bool
+    private let surfaceCornerRadius: CGFloat
 
     init(
         size: NSSize,
         level: NSWindow.Level = .floating,
-        activatesApplication: Bool = true
+        activatesApplication: Bool = true,
+        surfaceCornerRadius: CGFloat = 0
     ) {
         self.activatesApplication = activatesApplication
+        self.surfaceCornerRadius = surfaceCornerRadius
         var styleMask: NSWindow.StyleMask = [.borderless, .fullSizeContentView]
         if !activatesApplication {
             styleMask.insert(.nonactivatingPanel)
@@ -132,6 +135,15 @@ class MaterialPanelController {
             constraints.append(host.bottomAnchor.constraint(equalTo: container.bottomAnchor))
         }
         NSLayoutConstraint.activate(constraints)
+        // Mask the whole content layer to the surface's rounded shape. The
+        // SwiftUI surface draws an AppKit glass backdrop that fills the window
+        // frame; without this mask its square corners show through the
+        // transparent window around the rounded corners.
+        if surfaceCornerRadius > 0 {
+            container.layer?.cornerCurve = .continuous
+            container.layer?.cornerRadius = surfaceCornerRadius
+            container.layer?.masksToBounds = true
+        }
         panel.contentView = container
     }
 
@@ -275,11 +287,28 @@ final class LauncherPanelController: MaterialPanelController {
                     self.model.regeneratePassword()
                     return nil
                 }
+                // After the first AI answer finishes, Tab commits the exchange
+                // to the chat component and unlocks ⌘J as a component action.
+                if self.model.commitAIAnswerToChat() { return nil }
+                if self.model.isAIAnswer { return nil }
                 let modes = LauncherMode.allCases
                 if let index = modes.firstIndex(of: self.model.mode) {
                     self.model.switchMode(modes[(index + 1) % modes.count])
                 }
                 return nil
+            case 38 where modifiers == .command:
+                // ⌘J opens the chat window directly after the first AI answer
+                // completes, committing the exchange on the way. The window is
+                // otherwise entered from the launcher index or a user-configured
+                // global shortcut.
+                if self.model.isAIAnswer,
+                   !self.model.isLoadingAIAnswer,
+                   !self.model.aiAnswerResult.isEmpty {
+                    self.model.commitAIAnswerToChat()
+                    self.model.onOpenChat?()
+                    return nil
+                }
+                return event
             default:
                 return event
             }
@@ -563,7 +592,7 @@ final class NotePanelController: MaterialPanelController {
     init(model: NoteModel, settings: SettingsStore) {
         self.model = model
         completion = NoteCompletionModel(settings: settings)
-        super.init(size: NoteView.windowSize, level: .floating)
+        super.init(size: NoteView.windowSize, level: .floating, surfaceCornerRadius: 20)
         install(NoteView(
             model: model,
             completion: completion,
@@ -691,6 +720,51 @@ final class NotePanelController: MaterialPanelController {
     }
 }
 
+final class ChatPanelController: MaterialPanelController {
+    private let model: ChatModel
+    private var keyMonitor: Any?
+
+    init(model: ChatModel) {
+        self.model = model
+        super.init(size: ChatView.windowSize, level: .floating, surfaceCornerRadius: 20)
+        panel.styleMask.insert(.resizable)
+        panel.minSize = NSSize(width: 700, height: 480)
+        panel.setFrameAutosaveName("Riff.ChatWindow")
+        install(ChatView(
+            model: model,
+            close: { [weak panel] in panel?.orderOut(nil) }
+        ))
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.panel.isKeyWindow else { return event }
+            let modifiers = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting(.capsLock)
+            guard event.keyCode == 53 || (event.keyCode == 13 && modifiers == .command) else {
+                return event
+            }
+            self.panel.orderOut(nil)
+            return nil
+        }
+    }
+
+    deinit {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    }
+
+    func show() {
+        showCentered()
+    }
+
+    func toggle() {
+        if panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            show()
+        }
+    }
+}
+
 @MainActor
 final class TranslationPanelController: MaterialPanelController {
     let model: TranslationModel
@@ -700,7 +774,7 @@ final class TranslationPanelController: MaterialPanelController {
 
     init(model: TranslationModel, settings: SettingsStore, openSettings: @escaping () -> Void) {
         self.model = model
-        super.init(size: NSSize(width: 840, height: 470), level: .popUpMenu)
+        super.init(size: NSSize(width: 840, height: 470), level: .popUpMenu, surfaceCornerRadius: 20)
         install(TranslationView(
             model: model,
             settings: settings,
@@ -779,7 +853,7 @@ final class SettingsPanelController: MaterialPanelController {
         experienceMetrics: ExperienceMetricsStore,
         updater: AppUpdater
     ) {
-        super.init(size: NSSize(width: 560, height: 540), level: .floating)
+        super.init(size: NSSize(width: 560, height: 540), level: .floating, surfaceCornerRadius: 18)
         install(SettingsView(
             settings: settings,
             shortcuts: shortcuts,

@@ -18,8 +18,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the launcher state and performance bo
 - 输入 `100 USD to CNY`，使用 ECB 每个工作日发布的参考汇率换算
 - 输入 `随机密码`、`生成密码`、`pwgen` 等关键词，或选择 `密码` 快捷操作，进入随机密码组件；在组件输入框可直接输入长度（8–128 位）和「无符号」排除特殊符号，Tab 或 `⌘R` 重新生成，回车复制；组件会按每秒 100 亿次离线猜测估算暴力破解所需时间
 - 软件更新：设置中可检查 GitHub Releases 新版本，下载后校验 SHA-256 与签名，替换当前 App 并自动重新启动；启动时每天静默检查一次
+- AI 对话：从主窗口输入 `对话`、`chat`、`ai` 进入多轮对话窗口；在主窗口完成 AI 询问后按 `⌘ J` 自动把问答加入对话并打开窗口继续追问（也可先按 Tab 提交）；首轮回答后由 AI 自动生成对话名（也可手动重命名），侧栏右键可删除对话，每段对话独立选择模型；顶部显示当前 Provider 与模型，新对话默认模型跟随 Provider（DeepSeek → `deepseek-v4-flash`，OpenRouter → `deepseek-v4-flash-0731`）
+- 本地工具：AI 回答与 AI 对话可调用本地工具——天气（Open-Meteo，无需 API Key）、汇率（ECB）、计算器、随机密码、Unicode 搜索和翻译；例如问“北京天气怎么样”或“100 美元是多少人民币”会返回真实数据
+- 联网搜索：AI 回答与 AI 对话可调用 Tavily 实时搜索（`web_search`），返回带来源的结果；设置中可填写 Tavily API Key，未配置时自动使用 keyless 免费模式
+- 第一批 AI 工具：当前时间与时区换算、抓取网页正文、读取前台应用选中文本（需辅助功能权限）、读取与追加便笺
 - 没有匹配候选项时，可用默认浏览器执行 Google 搜索，或直接使用设置中的 AI Provider 流式回答；已打开的候选项会按最近使用顺序优先展示
-- OpenAI、OpenRouter、Gemini 三种翻译 Provider
+- OpenAI、OpenRouter、Gemini、DeepSeek 四种翻译 Provider
 - API Key 保存在 macOS Keychain 的 `Riff` 服务项，不使用开发环境命名
 - 设置中提供仅保存在本机的体验指标：启动器会话、成功/放弃、焦点与查询耗时 P95；只保存限长数值，不记录任何查询或用户内容
 
@@ -59,6 +63,7 @@ Riff 可以连接 llama.cpp 的 OpenAI 兼容聊天接口。设置中将“笔�
 | 复制译文并关闭翻译窗口 | `⌘ Enter` |
 | 剪贴板历史 | 未设置，可从主窗口进入 |
 | 置顶便笺 | 未设置，可从主窗口进入 |
+| AI 对话 | 未设置，可从主窗口进入；完成 AI 询问后 `⌘ J` 打开 |
 | 任意 Riff 窗口中打开设置 | `⌘ ,` |
 
 快捷键可以在设置中重新录制。录制状态下按 Delete 可清除快捷键；从旧版升级时，原先默认的 `⌥ V` 和 `⌥ N` 会迁移为未设置，不再占用系统组合键。
