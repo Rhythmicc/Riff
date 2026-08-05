@@ -63,13 +63,17 @@ final class AppSearchRankingTests: XCTestCase {
         }
         let usage = LauncherUsageStore(defaults: defaults, key: "ranking.test")
 
-        let ranked = AppModel.rankApplicationsForPresentation(
-            query: "we",
-            searchedResults: [wechat],
+        let merged = LauncherSearchPool.merge(
+            LauncherSearchPool.appItems(query: "we", applications: [wechat]),
+            queryLength: 2,
             usageStore: usage
         )
 
-        XCTAssertEqual(ranked.map(\.name), ["微信"])
+        XCTAssertEqual(merged.count, 1)
+        guard case .application(let first) = merged[0].payload else {
+            return XCTFail("expected an application item")
+        }
+        XCTAssertEqual(first.name, "微信")
     }
 
     func testApplicationScoreUsesAliasBeforeBundle() {
@@ -80,7 +84,10 @@ final class AppSearchRankingTests: XCTestCase {
             aliases: ["wechat", "weixin"]
         )
 
-        let score = AppModel.applicationScore(query: "we", application: wechat)
+        let score = SearchScorer.score(
+            query: "we",
+            candidate: SearchCandidateBuilder.build(for: wechat)
+        )
 
         XCTAssertNotNil(score)
         XCTAssertGreaterThan(score ?? 0, 0)

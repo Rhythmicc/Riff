@@ -22,11 +22,6 @@ enum ComponentAction: Sendable {
     case openPanel(panelID: String)
 }
 
-struct ComponentMatch: Sendable, Equatable {
-    var componentID: String
-    var priority: Int
-}
-
 /// A user-facing Riff capability. Built-in components implement this directly;
 /// third-party components will be adapted through a script host in a later
 /// phase while presenting the same surface to the launcher and settings.

@@ -42,19 +42,6 @@ final class ComponentManagerTests: XCTestCase {
         XCTAssertTrue(reopened.isEnabled(ComponentID.clipboard))
     }
 
-    func testMatchingRespectsEnablement() {
-        let defaults = makeDefaults()
-        let manager = ComponentManager(defaults: defaults)
-
-        XCTAssertEqual(
-            manager.matching("密码", mode: .apps).map(\.componentID),
-            [ComponentID.password]
-        )
-
-        manager.setEnabled(ComponentID.password, false)
-        XCTAssertTrue(manager.matching("密码", mode: .apps).isEmpty)
-    }
-
     func testAppModelFiltersQuickActionsForDisabledComponents() {
         let defaults = makeDefaults()
         let manager = ComponentManager(defaults: defaults)

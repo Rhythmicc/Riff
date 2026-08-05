@@ -4,10 +4,6 @@ import Security
 
 enum KeychainStore {
     static let serviceName = "Riff"
-    private static let legacyServices = [
-        RiffMigration.currentBundleIdentifier,
-        RiffMigration.legacyBundleIdentifier
-    ]
 
     static func set(_ value: String, account: String) {
         let data = Data(value.utf8)
@@ -48,36 +44,11 @@ enum KeychainStore {
         if current.status == errSecSuccess {
             return current.value
         }
-
-        for legacyService in legacyServices {
-            let legacy = read(service: legacyService, account: account)
-            if legacy.status == errSecSuccess, !legacy.value.isEmpty {
-                set(legacy.value, account: account)
-                if read(service: serviceName, account: account).status == errSecSuccess {
-                    delete(service: legacyService, account: account)
-                    DiagnosticLogger.shared.log("keychain", "migrated legacy account=\(account)")
-                    return legacy.value
-                }
-            }
-
-            DiagnosticLogger.shared.log(
-                "keychain",
-                "legacy read unavailable account=\(account) status=\(legacy.status)"
-            )
-        }
-
         DiagnosticLogger.shared.log(
             "keychain",
-            "read unavailable account=\(account) currentStatus=\(current.status)"
+            "read unavailable account=\(account) status=\(current.status)"
         )
         return ""
-    }
-
-    static func migrateLegacyItems(accounts: [String]) {
-        for account in accounts {
-            guard read(service: serviceName, account: account).status != errSecSuccess else { continue }
-            _ = get(account: account)
-        }
     }
 
     private static func read(service: String, account: String) -> (status: OSStatus, value: String) {
@@ -99,16 +70,6 @@ enum KeychainStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-    }
-
-    private static func delete(service: String, account: String) {
-        var query = baseQuery(service: service, account: account)
-        query[kSecUseAuthenticationContext as String] = nonInteractiveContext()
-        let status = SecItemDelete(query as CFDictionary)
-        DiagnosticLogger.shared.log(
-            "keychain",
-            "delete legacy service=\(service) account=\(account) status=\(status)"
-        )
     }
 
     private static func nonInteractiveContext() -> LAContext {

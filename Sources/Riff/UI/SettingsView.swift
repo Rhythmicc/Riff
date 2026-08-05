@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
@@ -9,6 +10,7 @@ struct SettingsView: View {
     @ObservedObject var components: ComponentManager
     let close: () -> Void
     @State private var accessibilityGranted = SelectionReader.isAccessibilityTrusted
+    @State private var componentError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -218,7 +220,52 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    Text("停用后，对应组件的启动器关键词与快捷操作不再出现。第三方组件规范已设计，安装支持将在后续版本提供。")
+
+                    if !components.installed.isEmpty {
+                        Divider()
+                        ForEach(components.installed, id: \.id) { component in
+                            HStack(spacing: 10) {
+                                Image(systemName: component.manifest.icon ?? "square.grid.2x2")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(LauncherTheme.primary.opacity(0.8))
+                                    .frame(width: 22)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(component.manifest.name)
+                                    Text("\(component.manifest.author) · v\(component.manifest.version) · 第三方")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(LauncherTheme.secondary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { components.isEnabled(component.id) },
+                                    set: { components.setEnabled(component.id, $0) }
+                                ))
+                                .labelsHidden()
+                                Button("卸载") {
+                                    do {
+                                        try components.uninstall(id: component.id)
+                                        componentError = nil
+                                    } catch {
+                                        componentError = error.localizedDescription
+                                    }
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("安装组件…") { installComponent() }
+                        Button("打开组件目录") { components.openComponentsDirectory() }
+                    }
+
+                    if let componentError {
+                        Text(componentError)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                    }
+
+                    Text("停用后，对应组件的启动器关键词与快捷操作不再出现。第三方组件以子进程运行，按 manifest 声明的权限执行，安装或更新前请确认来源可信。")
                         .font(.system(size: 11))
                         .foregroundStyle(LauncherTheme.secondary)
                 }
@@ -432,5 +479,21 @@ struct SettingsView: View {
 
     private func refreshAccessibilityStatus() {
         accessibilityGranted = SelectionReader.isAccessibilityTrusted
+    }
+
+    private func installComponent() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip]
+        panel.message = "选择 .riffcomponent/.zip 组件包，或包含 manifest.json 的组件目录"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try components.install(from: url)
+            componentError = nil
+        } catch {
+            componentError = error.localizedDescription
+        }
     }
 }

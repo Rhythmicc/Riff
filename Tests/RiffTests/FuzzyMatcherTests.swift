@@ -30,7 +30,10 @@ final class FuzzyMatcherTests: XCTestCase {
             name: "AM_Master",
             bundleIdentifier: "com.angrymiao.master"
         )
-        XCTAssertNil(AppModel.applicationScore(query: "note", application: unrelated))
+        XCTAssertNil(SearchScorer.score(
+            query: "note",
+            candidate: SearchCandidateBuilder.build(for: unrelated)
+        ))
     }
 
     func testBundleIdentifierSupportsContiguousQueries() {
@@ -39,7 +42,10 @@ final class FuzzyMatcherTests: XCTestCase {
             name: "Visual Studio Code",
             bundleIdentifier: "com.microsoft.VSCode"
         )
-        XCTAssertNotNil(AppModel.applicationScore(query: "vscode", application: code))
+        XCTAssertNotNil(SearchScorer.score(
+            query: "vscode",
+            candidate: SearchCandidateBuilder.build(for: code)
+        ))
     }
 
     func testApplicationNameScoreOutranksAnExactBundleIdentifierScore() throws {
@@ -54,8 +60,14 @@ final class FuzzyMatcherTests: XCTestCase {
             bundleIdentifier: "cdx"
         )
 
-        let nameScore = try XCTUnwrap(AppModel.applicationScore(query: "cdx", application: nameMatch))
-        let bundleScore = try XCTUnwrap(AppModel.applicationScore(query: "cdx", application: bundleOnlyMatch))
+        let nameScore = try XCTUnwrap(SearchScorer.score(
+            query: "cdx",
+            candidate: SearchCandidateBuilder.build(for: nameMatch)
+        ))
+        let bundleScore = try XCTUnwrap(SearchScorer.score(
+            query: "cdx",
+            candidate: SearchCandidateBuilder.build(for: bundleOnlyMatch)
+        ))
 
         XCTAssertGreaterThan(nameScore, bundleScore)
     }

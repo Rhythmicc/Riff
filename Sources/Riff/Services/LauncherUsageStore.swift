@@ -24,20 +24,7 @@ final class LauncherUsageStore {
            let decoded = try? JSONDecoder().decode([String: Entry].self, from: data) {
             entries = decoded
         } else {
-            // One-time migration from the legacy recency list.
-            let legacyKey = "launcher.recentSelections"
-            let legacy = defaults.stringArray(forKey: legacyKey) ?? []
-            var migrated: [String: Entry] = [:]
-            for (index, identifier) in legacy.enumerated() {
-                migrated[identifier] = Entry(
-                    hits: 1,
-                    lastUsedAt: Date().addingTimeInterval(-Double(index))
-                )
-            }
-            entries = migrated
-            if !legacy.isEmpty {
-                defaults.removeObject(forKey: legacyKey)
-            }
+            entries = [:]
         }
     }
 

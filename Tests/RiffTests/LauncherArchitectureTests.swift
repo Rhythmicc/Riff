@@ -154,13 +154,20 @@ final class LauncherArchitectureTests: XCTestCase {
         )
         store.record("app:\(bundleOnlyMatch.id)")
 
-        let ranked = AppModel.rankApplicationsForPresentation(
-            query: "cdx",
-            searchedResults: [nameMatch, bundleOnlyMatch],
+        let merged = LauncherSearchPool.merge(
+            LauncherSearchPool.appItems(
+                query: "cdx",
+                applications: [nameMatch, bundleOnlyMatch]
+            ),
+            queryLength: 3,
             usageStore: store
         )
 
-        XCTAssertEqual(ranked, [nameMatch, bundleOnlyMatch])
+        XCTAssertEqual(merged.count, 2)
+        guard case .application(let first) = merged[0].payload else {
+            return XCTFail("expected an application item")
+        }
+        XCTAssertEqual(first.name, "Cool Draft Xylophone")
     }
 
     func testApplicationIndexRefreshesAChangedRoot() async throws {

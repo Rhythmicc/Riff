@@ -32,19 +32,6 @@ struct UnicodeSymbolTile: View {
     }
 }
 
-struct LauncherActionRow: View {
-    let action: LauncherQuickAction
-    let selected: Bool
-
-    var body: some View {
-        LauncherCommandRow(
-            title: action.title,
-            symbol: action.symbol,
-            selected: selected
-        )
-    }
-}
-
 struct LauncherCommandRow: View {
     let title: String
     let symbol: String
@@ -67,37 +54,6 @@ struct LauncherCommandRow: View {
             }
         }
         .foregroundStyle(LauncherTheme.primary)
-        .padding(.horizontal, 18)
-        .frame(height: LauncherView.candidateRowDesignHeight)
-        .riffSelectedSurface(selected, cornerRadius: 11)
-        .contentShape(Rectangle())
-    }
-}
-
-struct AppRow: View {
-    let application: ApplicationRecord
-    let selected: Bool
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(nsImage: LauncherImageCache.shared.applicationIcon(for: application.url))
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 34, height: 34)
-            Text(application.name)
-                .font(.system(size: 16.5, weight: .medium))
-                .foregroundStyle(LauncherTheme.primary)
-                .lineLimit(1)
-            Spacer()
-            Text(application.url.deletingLastPathComponent().lastPathComponent)
-                .font(.system(size: 12))
-                .foregroundStyle(LauncherTheme.secondary)
-            if selected {
-                Image(systemName: "return")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LauncherTheme.secondary)
-            }
-        }
         .padding(.horizontal, 18)
         .frame(height: LauncherView.candidateRowDesignHeight)
         .riffSelectedSurface(selected, cornerRadius: 11)

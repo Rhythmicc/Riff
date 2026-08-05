@@ -66,15 +66,6 @@ final class ComponentManager: ObservableObject {
         defaults.set(enabledIDs.sorted(), forKey: Self.enabledKey)
     }
 
-    func matching(_ query: String, mode: LauncherMode) -> [ComponentMatch] {
-        registry.matching(
-            query,
-            mode: mode,
-            enabledIDs: enabledIDs,
-            installed: installedComponents()
-        )
-    }
-
     /// Best matching *installed* component for the launcher, or nil when only
     /// built-in quick actions match (those stay as native quick-action rows).
     func installedMatch(_ query: String, mode: LauncherMode) -> (any RiffComponent)? {

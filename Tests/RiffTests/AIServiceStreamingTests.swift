@@ -2,6 +2,35 @@ import XCTest
 @testable import Riff
 
 final class AIServiceStreamingTests: XCTestCase {
+    private func compatibleTransport(
+        _ provider: AIProvider = .deepSeek
+    ) -> OpenAICompatibleTransport {
+        OpenAICompatibleTransport(
+            provider: provider,
+            baseURL: URL(string: "https://api.deepseek.com/chat/completions")!,
+            apiKey: "k",
+            headers: [:]
+        )
+    }
+
+    private func request(
+        model: String = "test-model",
+        messages: [ConversationMessage] = [
+            .chat(ChatMessage(role: .user, content: "Translate me"))
+        ],
+        tools: [RiffTool] = [],
+        temperature: Double = 0.2,
+        maxOutputTokens: Int? = nil
+    ) -> AIRequest {
+        AIRequest(
+            model: model,
+            messages: messages,
+            tools: tools,
+            temperature: temperature,
+            maxOutputTokens: maxOutputTokens
+        )
+    }
+
     func testGeneralAnswerPromptKeepsTheUserRequestAndLanguageInstruction() {
         let prompt = AIService.answerPrompt(query: "解释稀疏矩阵")
 
@@ -19,24 +48,24 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testExtractsOpenAIResponsesDelta() throws {
-        let delta = try AIService.streamDelta(from: [
+        let delta = try OpenAIResponsesTransport.delta(from: [
             "type": "response.output_text.delta",
             "delta": "你好"
-        ], provider: .openAI)
+        ])
 
         XCTAssertEqual(delta, "你好")
     }
 
     func testExtractsOpenRouterChatCompletionDelta() throws {
-        let delta = try AIService.streamDelta(from: [
+        let delta = try OpenAICompatibleTransport.delta(from: [
             "choices": [["delta": ["content": "世界"]]]
-        ], provider: .openRouter)
+        ])
 
         XCTAssertEqual(delta, "世界")
     }
 
-    func testOpenRouterTranslationDisablesDefaultReasoningAndStreams() throws {
-        let payload = AIService.openRouterPayload(prompt: "Translate me", model: "example/model")
+    func testOpenRouterDisablesDefaultReasoningAndStreams() throws {
+        let payload = compatibleTransport(.openRouter).payload(request: request())
         let reasoning = try XCTUnwrap(payload["reasoning"] as? [String: Bool])
 
         XCTAssertEqual(payload["stream"] as? Bool, true)
@@ -45,11 +74,8 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testOpenRouterCompletionUsesLowLatencyBoundedGeneration() {
-        let payload = AIService.openRouterPayload(
-            prompt: "Continue",
-            model: "small-model",
-            maxOutputTokens: 96,
-            temperature: 0.1
+        let payload = compatibleTransport(.openRouter).payload(
+            request: request(temperature: 0.1, maxOutputTokens: 96)
         )
 
         XCTAssertEqual(payload["max_tokens"] as? Int, 96)
@@ -58,11 +84,8 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testDeepSeekPayloadUsesOpenAICompatibleChatCompletions() {
-        let payload = AIService.deepSeekPayload(
-            prompt: "Translate me",
-            model: "deepseek-chat",
-            maxOutputTokens: 96,
-            temperature: 0.1
+        let payload = compatibleTransport(.deepSeek).payload(
+            request: request(model: "deepseek-chat", temperature: 0.1, maxOutputTokens: 96)
         )
 
         XCTAssertEqual(payload["model"] as? String, "deepseek-chat")
@@ -74,14 +97,14 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testExtractsDeepSeekDeltaAndIgnoresReasoningOnlyChunks() throws {
-        let delta = try AIService.streamDelta(from: [
+        let delta = try OpenAICompatibleTransport.delta(from: [
             "choices": [["delta": ["content": "你好"]]]
-        ], provider: .deepSeek)
+        ])
         XCTAssertEqual(delta, "你好")
 
-        let reasoningOnly = try AIService.streamDelta(from: [
+        let reasoningOnly = try OpenAICompatibleTransport.delta(from: [
             "choices": [["delta": ["reasoning_content": "思考中…"]]]
-        ], provider: .deepSeek)
+        ])
         XCTAssertNil(reasoningOnly)
     }
 
@@ -91,10 +114,12 @@ final class AIServiceStreamingTests: XCTestCase {
             ChatMessage(role: .assistant, content: "第一答"),
             ChatMessage(role: .user, content: "追问")
         ]
-        let payload = AIService.openAICompatibleChatPayload(
-            messages: messages,
-            model: "deepseek-v4-flash-0731",
-            temperature: 0.2
+        let payload = compatibleTransport().payload(
+            request: request(
+                model: "deepseek-v4-flash-0731",
+                messages: messages.map { .chat($0) },
+                maxOutputTokens: 1024
+            )
         )
 
         XCTAssertEqual(payload["model"] as? String, "deepseek-v4-flash-0731")
@@ -106,15 +131,9 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testOpenAICompatibleChatPayloadIncludesTools() {
-        let messages: [[String: Any]] = [
-            ["role": "user", "content": "北京天气怎么样？"]
-        ]
         let tools = RiffToolRegistry.tools(provider: .deepSeek, model: "m", apiKey: "k")
-        let payload = AIService.openAICompatibleChatPayload(
-            messages: messages,
-            model: "deepseek-v4-flash-0731",
-            temperature: 0.2,
-            tools: tools
+        let payload = compatibleTransport().payload(
+            request: request(tools: tools)
         )
 
         let toolSchemas = payload["tools"] as? [[String: Any]]
@@ -128,7 +147,7 @@ final class AIServiceStreamingTests: XCTestCase {
     func testCollectToolCallDeltasAccumulatesFragments() {
         var accumulator: [Int: PendingToolCall] = [:]
 
-        AIService.collectToolCallDeltas(
+        OpenAICompatibleTransport.collectToolCallDeltas(
             from: [
                 "choices": [[
                     "delta": [
@@ -142,7 +161,7 @@ final class AIServiceStreamingTests: XCTestCase {
             ],
             into: &accumulator
         )
-        AIService.collectToolCallDeltas(
+        OpenAICompatibleTransport.collectToolCallDeltas(
             from: [
                 "choices": [[
                     "delta": [
@@ -163,21 +182,21 @@ final class AIServiceStreamingTests: XCTestCase {
     }
 
     func testExtractsGeminiDeltaAndIgnoresThoughtParts() throws {
-        let delta = try AIService.streamDelta(from: [
+        let delta = try GeminiTransport.delta(from: [
             "candidates": [[
                 "content": ["parts": [
                     ["text": "internal", "thought": true],
                     ["text": "译文"]
                 ]]
             ]]
-        ], provider: .gemini)
+        ])
 
         XCTAssertEqual(delta, "译文")
     }
 
     func testStreamingErrorsAreSurfaced() {
-        XCTAssertThrowsError(try AIService.streamDelta(from: [
+        XCTAssertThrowsError(try OpenAICompatibleTransport.delta(from: [
             "error": ["message": "provider unavailable"]
-        ], provider: .openRouter))
+        ]))
     }
 }

@@ -3,7 +3,6 @@ import AppKit
 @main
 enum RiffMain {
     static func main() {
-        RiffMigration.prepare()
         DiagnosticLogger.shared.startSession()
         DiagnosticLogger.shared.log(
             "app",

@@ -22,22 +22,6 @@ final class ComponentRegistry {
     func installedComponents() -> [ScriptComponentAdapter] {
         installedStore.loadInstalled().map(ScriptComponentAdapter.init)
     }
-
-    func matching(
-        _ query: String,
-        mode: LauncherMode,
-        enabledIDs: Set<String>,
-        installed: [ScriptComponentAdapter] = []
-    ) -> [ComponentMatch] {
-        let components = builtIn + installed
-        return components.compactMap { component in
-            guard enabledIDs.contains(component.id),
-                  let priority = component.matchPriority(for: query, mode: mode)
-            else { return nil }
-            return ComponentMatch(componentID: component.id, priority: priority)
-        }
-        .sorted { $0.priority > $1.priority }
-    }
 }
 
 enum BuiltinComponentCatalog {

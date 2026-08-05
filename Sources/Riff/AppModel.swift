@@ -561,50 +561,6 @@ final class AppModel: ObservableObject {
         clipboard.revealStorage()
     }
 
-    nonisolated static func applicationScore(
-        query: String,
-        application: ApplicationRecord
-    ) -> Int? {
-        SearchScorer.score(
-            query: query,
-            candidate: SearchCandidateBuilder.build(for: application)
-        )
-    }
-
-    static func rankApplicationsForPresentation(
-        query: String,
-        searchedResults: [ApplicationRecord],
-        usageStore: LauncherUsageStore
-    ) -> [ApplicationRecord] {
-        // Match quality dominates. Recent usage adds a bounded bonus so it
-        // breaks near-ties but can never bridge a real quality gap (for
-        // example initials-exact vs bundle-exact).
-        let scored = searchedResults.enumerated().map { index, application in
-            (
-                application: application,
-                score: SearchScorer.score(
-                    query: query,
-                    candidate: SearchCandidateBuilder.build(for: application)
-                ) ?? 0,
-                order: index
-            )
-        }
-        return scored.sorted { lhs, rhs in
-            let lhsFinal = lhs.score + usageBonus(usageStore, application: lhs.application)
-            let rhsFinal = rhs.score + usageBonus(usageStore, application: rhs.application)
-            if lhsFinal != rhsFinal { return lhsFinal > rhsFinal }
-            return lhs.order < rhs.order
-        }.map(\.application)
-    }
-
-    private static func usageBonus(
-        _ usageStore: LauncherUsageStore,
-        application: ApplicationRecord
-    ) -> Int {
-        guard let position = usageStore.position(of: "app:\(application.id)") else { return 0 }
-        return max(0, 250 - position * 25)
-    }
-
     nonisolated static func isNoteQuery(_ query: String) -> Bool {
         LauncherQuickAction.matching(query).contains(.note)
     }
