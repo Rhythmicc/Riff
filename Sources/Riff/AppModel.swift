@@ -91,8 +91,25 @@ final class AppModel: ObservableObject {
     }
 
     var filteredApplications: [ApplicationRecord] {
-        guard case .applications(_, let items, _, _) = state.content else { return [] }
+        searchItems.compactMap { item in
+            if case .application(let application) = item.payload { return application }
+            return nil
+        }
+    }
+
+    var searchItems: [LauncherSearchItem] {
+        guard case .search(let items, _, _) = state.content else { return [] }
         return items
+    }
+
+    var searchIsLoading: Bool {
+        guard case .search(_, _, let isSearching) = state.content else { return false }
+        return isSearching
+    }
+
+    var searchHasMore: Bool {
+        guard case .search(_, let hasMore, _) = state.content else { return false }
+        return hasMore
     }
 
     var filteredClipboard: [ClipboardItem] {
@@ -203,8 +220,10 @@ final class AppModel: ObservableObject {
     }
 
     var systemOperations: [SystemOperation] {
-        guard case .systemOperations(let operations) = state.content else { return [] }
-        return operations
+        searchItems.compactMap { item in
+            if case .systemOperation(let operation) = item.payload { return operation }
+            return nil
+        }
     }
 
     var isSystemOperationQuery: Bool { !systemOperations.isEmpty }
@@ -278,25 +297,26 @@ final class AppModel: ObservableObject {
     }
 
     var quickActions: [LauncherQuickAction] {
-        guard case .applications(let actions, _, _, _) = state.content else { return [] }
-        return actions
+        searchItems.compactMap { item in
+            if case .quickAction(let action) = item.payload { return action }
+            return nil
+        }
     }
 
     var hasInferredContent: Bool {
         switch state.content {
         case .calculation, .currency, .graph, .unicode, .password, .aiAnswer, .component: return true
-        case .idle, .systemOperations, .fallback, .applications, .clipboard: return false
+        case .idle, .search, .fallback, .clipboard: return false
         }
     }
 
     var resultCount: Int {
         switch state.content {
         case .idle, .graph: return 0
-        case .systemOperations(let operations): return operations.count
         case .fallback(_, let actions): return actions.count
         case .aiAnswer(_, _, let result, _, let isLoading):
             return !result.isEmpty && !isLoading ? 1 : 0
-        case .applications(let actions, let items, _, _): return actions.count + items.count
+        case .search(let items, _, _): return items.count
         case .clipboard(let items): return items.count
         case .calculation, .currency, .password: return 1
         case .unicode(_, let items, _): return items.count
@@ -365,19 +385,20 @@ final class AppModel: ObservableObject {
         guard resultCount > 0 else { return }
         if offset > 0,
            state.selectedIndex == resultCount - 1,
-           case .applications(let actions, _, let hasMore, _) = state.content,
-           hasMore {
+            searchHasMore {
             let nextSelection = resultCount
             applicationResultLimit += 8
-            let items = Array(rankedApplications.prefix(applicationResultLimit))
+            let items = currentPoolItems(
+                query: state.query,
+                appLimit: applicationResultLimit
+            )
             var next = state
-            next.content = .applications(
-                actions: actions,
+            next.content = .search(
                 items: items,
-                hasMore: items.count < rankedApplications.count,
+                hasMore: rankedApplications.count > applicationResultLimit,
                 isSearching: false
             )
-            next.selectedIndex = min(nextSelection, actions.count + items.count - 1)
+            next.selectedIndex = min(nextSelection, items.count - 1)
             state = next
             return
         }
@@ -399,12 +420,6 @@ final class AppModel: ObservableObject {
     @discardableResult
     func activateSelection() -> Bool {
         switch state.content {
-        case .systemOperations(let operations):
-            guard operations.indices.contains(state.selectedIndex) else { return false }
-            usageStore.record("system:\(operations[state.selectedIndex].rawValue)")
-            recordSuccessfulActivation()
-            onPerformSystemOperation?(operations[state.selectedIndex])
-            return true
         case .fallback(let query, let actions):
             guard actions.indices.contains(state.selectedIndex) else { return false }
             let action = actions[state.selectedIndex]
@@ -441,9 +456,19 @@ final class AppModel: ObservableObject {
             recordSuccessfulActivation()
             copyText(result)
             return true
-        case .applications(let actions, let items, _, _):
-            if actions.indices.contains(state.selectedIndex) {
-                let action = actions[state.selectedIndex]
+        case .search(let items, _, let isSearching):
+            guard items.indices.contains(state.selectedIndex) else { return false }
+            let item = items[state.selectedIndex]
+            // Quick actions and system operations are actionable immediately;
+            // apps must wait for the search task to settle.
+            if isSearching, case .application = item.payload { return false }
+            usageStore.record(item.id)
+            switch item.payload {
+            case .application(let application):
+                recordSuccessfulActivation()
+                applicationIndex.launch(application)
+                return true
+            case .quickAction(let action):
                 usageStore.record("quick:\(action.rawValue)")
                 switch action {
                 case .note:
@@ -468,14 +493,11 @@ final class AppModel: ObservableObject {
                     onOpenChat?()
                     return true
                 }
+            case .systemOperation(let operation):
+                recordSuccessfulActivation()
+                onPerformSystemOperation?(operation)
+                return true
             }
-            let applicationOffset = state.selectedIndex - actions.count
-            guard items.indices.contains(applicationOffset) else { return false }
-            let application = items[applicationOffset]
-            usageStore.record("app:\(application.id)")
-            recordSuccessfulActivation()
-            applicationIndex.launch(application)
-            return true
         case .clipboard(let items):
             guard items.indices.contains(state.selectedIndex) else { return false }
             recordSuccessfulActivation()
@@ -644,51 +666,43 @@ final class AppModel: ObservableObject {
             return
         }
 
-        var intent = LauncherQueryClassifier.classify(newQuery)
-        if case .systemOperations = intent,
-           !componentManager.isEnabled(ComponentID.systemOperations) {
-            intent = .applications(actions: LauncherQuickAction.matching(newQuery))
-        }
-        switch intent {
-        case .systemOperations(let operations):
-            rankedApplications = []
-            let rankedOperations = usageStore.sorted(operations) { "system:\($0.rawValue)" }
-            state = LauncherState(
-                query: newQuery,
-                mode: .apps,
-                selectedIndex: 0,
-                content: .systemOperations(rankedOperations)
-            )
-
-        case .applications(let actions):
+        switch LauncherQueryClassifier.classify(newQuery) {
+        case .search:
             if let installedComponent = componentManager.installedMatch(newQuery, mode: .apps) {
                 startComponentResults(component: installedComponent, query: newQuery)
                 return
             }
-            let enabledActions = actions.filter { action in
+            let quickItems = LauncherSearchPool.quickActionItems(query: newQuery) { action in
                 guard let componentID = Self.componentID(for: action) else { return true }
                 return componentManager.isEnabled(componentID)
             }
-            let rankedActions = usageStore.sorted(enabledActions) { "quick:\($0.rawValue)" }
-            let previousItems: [ApplicationRecord]
-            if case .applications(_, let items, _, _) = oldState.content {
-                previousItems = items
-            } else {
-                previousItems = []
-            }
+            let systemItems = LauncherSearchPool.systemOperationItems(
+                query: newQuery,
+                isEnabled: componentManager.isEnabled(ComponentID.systemOperations)
+            )
+            let initialItems = LauncherSearchPool.merge(
+                quickItems + systemItems,
+                queryLength: newQuery.count,
+                usageStore: usageStore,
+                appLimit: applicationResultLimit
+            )
+            rankedApplications = []
             state = LauncherState(
                 query: newQuery,
                 mode: .apps,
                 selectedIndex: 0,
-                content: .applications(
-                    actions: rankedActions,
-                    items: previousItems,
+                content: .search(
+                    items: initialItems,
                     hasMore: false,
                     isSearching: true
                 )
             )
             guard !isIndexing else { return }
-            startApplicationSearch(query: newQuery, actions: rankedActions)
+            startApplicationSearch(
+                query: newQuery,
+                quickItems: quickItems,
+                systemItems: systemItems
+            )
 
         case .calculation(let result):
             rankedApplications = []
@@ -836,21 +850,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startApplicationSearch(query: String, actions: [LauncherQuickAction]) {
+    private func startApplicationSearch(
+        query: String,
+        quickItems: [LauncherSearchItem],
+        systemItems: [LauncherSearchItem]
+    ) {
         applicationSearchTask = Task { [weak self] in
             guard let self else { return }
             let searchedResults = await applicationSearch.search(query)
             guard !Task.isCancelled,
                   state.mode == .apps,
                   state.query == query,
-                  case .applications = state.content else { return }
-            let results = Self.rankApplicationsForPresentation(
+                  case .search = state.content else { return }
+            rankedApplications = searchedResults
+            let merged = currentPoolItems(
                 query: query,
-                searchedResults: searchedResults,
-                usageStore: usageStore
+                quickItems: quickItems,
+                systemItems: systemItems,
+                appLimit: applicationResultLimit
             )
-            rankedApplications = results
-            if actions.isEmpty, results.isEmpty {
+            if merged.isEmpty {
                 let fallbackActions = usageStore.sorted(LauncherFallbackAction.allCases) {
                     "fallback:\($0.rawValue)"
                 }
@@ -862,17 +881,45 @@ final class AppModel: ObservableObject {
                 )
                 return
             }
-            let items = Array(results.prefix(applicationResultLimit))
-            var next = state
-            next.selectedIndex = 0
-            next.content = .applications(
-                actions: actions,
-                items: items,
-                hasMore: items.count < results.count,
-                isSearching: false
+            state = LauncherState(
+                query: query,
+                mode: .apps,
+                selectedIndex: 0,
+                content: .search(
+                    items: merged,
+                    hasMore: rankedApplications.count > applicationResultLimit,
+                    isSearching: false
+                )
             )
-            state = next
         }
+    }
+
+    /// Rebuilds the unified pool for the current query, used after app search
+    /// finishes and when the user pages deeper into the app list.
+    private func currentPoolItems(
+        query: String,
+        quickItems: [LauncherSearchItem]? = nil,
+        systemItems: [LauncherSearchItem]? = nil,
+        appLimit: Int = 8
+    ) -> [LauncherSearchItem] {
+        let quick = quickItems ?? LauncherSearchPool.quickActionItems(query: query) { action in
+            guard let componentID = Self.componentID(for: action) else { return true }
+            return componentManager.isEnabled(componentID)
+        }
+        let system = systemItems ?? LauncherSearchPool.systemOperationItems(
+            query: query,
+            isEnabled: componentManager.isEnabled(ComponentID.systemOperations)
+        )
+        let apps = LauncherSearchPool.appItems(
+            query: query,
+            applications: Array(rankedApplications.prefix(appLimit))
+        )
+        return LauncherSearchPool.merge(
+            quick + system + apps,
+            queryLength: query.count,
+            usageStore: usageStore,
+            appLimit: appLimit
+        )
     }
 
     private func startAIAnswer(query: String) {

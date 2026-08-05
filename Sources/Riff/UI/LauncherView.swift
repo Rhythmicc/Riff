@@ -114,14 +114,14 @@ struct LauncherView: View {
 
     private var desiredDesignHeight: CGFloat {
         guard model.shouldShowResults else { return Self.collapsedDesignHeight }
+        if model.isComponentQuery {
+            return Self.resultDesignHeight(rowCount: model.resultCount)
+        }
         if model.mode == .clipboard || model.isGraphQuery {
             return Self.designSize.height
         }
         if model.isUnicodeQuery {
             return Self.unicodeGridDesignHeight(itemCount: model.resultCount)
-        }
-        if model.isSystemOperationQuery {
-            return Self.resultDesignHeight(rowCount: model.resultCount)
         }
         if model.isFallbackQuery {
             return Self.resultDesignHeight(rowCount: model.resultCount)
@@ -170,15 +170,15 @@ struct LauncherView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.isSystemOperationQuery {
-            systemOperationResults
+        if model.isComponentQuery {
+            componentResults
         } else if model.isFallbackQuery {
             fallbackResults
         } else if model.hasInferredContent {
             inferredResults
         } else {
             switch model.mode {
-            case .apps: appResults
+            case .apps: searchResults
             case .clipboard: clipboardResults
             case .password: passwordCard
             }
@@ -201,77 +201,49 @@ struct LauncherView: View {
         }
     }
 
-    private var systemOperationResults: some View {
-        resultList(model.systemOperations) { index, operation in
-            Button {
-                model.selectedIndex = index
-                if model.activateSelection() { close() }
-            } label: {
-                LauncherCommandRow(
-                    title: operation.title,
-                    symbol: operation.symbol,
-                    selected: model.selectedIndex == index
-                )
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var appResults: some View {
+    private var componentResults: some View {
         Group {
-            if model.isIndexing {
+            if model.componentIsLoading {
                 VStack(spacing: 12) {
                     ProgressView().controlSize(.small)
-                    Text("正在建立应用索引…").foregroundStyle(LauncherTheme.secondary)
+                    Text("正在查询组件…").foregroundStyle(LauncherTheme.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let actions = model.quickActions
-                let applications = model.filteredApplications
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 5) {
-                            ForEach(0..<(actions.count + applications.count), id: \.self) { selectionIndex in
-                                Group {
-                                    if selectionIndex < actions.count {
-                                        let action = actions[selectionIndex]
-                                        Button {
-                                            model.selectedIndex = selectionIndex
-                                            if model.activateSelection() { close() }
-                                        } label: {
-                                            LauncherActionRow(
-                                                action: action,
-                                                selected: model.selectedIndex == selectionIndex
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                    } else {
-                                        let application = applications[selectionIndex - actions.count]
-                                        Button {
-                                            model.selectedIndex = selectionIndex
-                                            if model.activateSelection() { close() }
-                                        } label: {
-                                            AppRow(
-                                                application: application,
-                                                selected: model.selectedIndex == selectionIndex
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .id(selectionIndex)
-                            }
-                        }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .top)
+                resultList(model.componentItems) { index, item in
+                    Button {
+                        model.selectedIndex = index
+                        if model.activateSelection() { close() }
+                    } label: {
+                        ComponentResultRow(item: item, selected: model.selectedIndex == index)
                     }
-                    .scrollIndicators(.hidden)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onChange(of: model.selectedIndex) { _, selectedIndex in
-                        withAnimation(.easeOut(duration: 0.12)) {
-                            proxy.scrollTo(selectedIndex, anchor: .center)
-                        }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var searchResults: some View {
+        Group {
+            if model.searchIsLoading, model.searchItems.isEmpty {
+                VStack(spacing: 12) {
+                    ProgressView().controlSize(.small)
+                    Text(model.isIndexing ? "正在建立应用索引…" : "正在搜索…")
+                        .foregroundStyle(LauncherTheme.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                resultList(model.searchItems) { index, item in
+                    Button {
+                        model.selectedIndex = index
+                        if model.activateSelection() { close() }
+                    } label: {
+                        LauncherSearchRow(
+                            item: item,
+                            selected: model.selectedIndex == index
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }

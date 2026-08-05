@@ -17,16 +17,12 @@ final class LauncherArchitectureTests: XCTestCase {
             XCTFail("Expected Unicode intent")
         }
 
-        if case .applications(let actions) = LauncherQueryClassifier.classify("note") {
-            XCTAssertEqual(actions, [.note])
-        } else {
-            XCTFail("Expected applications intent")
+        guard case .search = LauncherQueryClassifier.classify("note") else {
+            return XCTFail("Expected search intent")
         }
 
-        if case .systemOperations(let operations) = LauncherQueryClassifier.classify("睡眠") {
-            XCTAssertEqual(operations, [.sleep])
-        } else {
-            XCTFail("Expected system operation intent")
+        guard case .search = LauncherQueryClassifier.classify("睡眠") else {
+            return XCTFail("Expected search intent")
         }
 
         if case .password(let request) = LauncherQueryClassifier.classify("随机密码 24") {
@@ -48,10 +44,8 @@ final class LauncherArchitectureTests: XCTestCase {
         XCTAssertEqual(SystemOperation.matching("睡"), [.sleep])
         XCTAssertEqual(SystemOperation.matching("mac"), [.sleep])
 
-        if case .applications(let actions) = LauncherQueryClassifier.classify("sys") {
-            XCTAssertTrue(actions.isEmpty)
-        } else {
-            XCTFail("Expected sys to remain an application query")
+        guard case .search = LauncherQueryClassifier.classify("sys") else {
+            return XCTFail("Expected sys to remain a search query")
         }
     }
 
@@ -224,7 +218,7 @@ final class LauncherArchitectureTests: XCTestCase {
         )
 
         model.query = "safari"
-        if case .applications(_, _, _, let isSearching) = model.state.content {
+        if case .search(_, _, let isSearching) = model.state.content {
             XCTAssertTrue(isSearching)
         } else {
             XCTFail("Expected a pending application search")

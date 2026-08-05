@@ -88,21 +88,19 @@ final class LauncherModeTests: XCTestCase {
     }
 
     func testApplicationUpdatesKeepTheSamePresentationKind() {
-        let searching = LauncherContent.applications(
-            actions: [],
+        let searching = LauncherContent.search(
             items: [],
             hasMore: false,
             isSearching: true
         )
-        let loaded = LauncherContent.applications(
-            actions: [],
+        let loaded = LauncherContent.search(
             items: [],
             hasMore: false,
             isSearching: false
         )
 
-        XCTAssertEqual(searching.presentationKind, .applications)
-        XCTAssertEqual(loaded.presentationKind, .applications)
+        XCTAssertEqual(searching.presentationKind, .search)
+        XCTAssertEqual(loaded.presentationKind, .search)
     }
 
     func testUnicodeGridHeightTracksGridRowsInsteadOfIndividualSymbols() {

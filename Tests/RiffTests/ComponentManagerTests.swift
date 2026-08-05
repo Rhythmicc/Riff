@@ -82,8 +82,8 @@ final class ComponentManagerTests: XCTestCase {
 
         model.query = "睡眠"
 
-        if case .systemOperations = model.state.content {
-            XCTFail("system operations should be disabled")
+        if case .search(let items, _, _) = model.state.content {
+            XCTAssertFalse(items.contains { $0.category == .systemOperation })
         }
     }
 

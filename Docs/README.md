@@ -7,7 +7,7 @@
 | [ComponentSystem.md](ComponentSystem.md) | 组件管理系统：内置组件注册表、第三方组件规范、安装与安全模型 | 已实现（含第三方脚本组件安装/卸载与启动器结果） |
 | [AIServiceUnification.md](AIServiceUnification.md) | AI 服务层重构：合并 provider 分支、统一流式与工具调用 | 已实现 |
 | [ChatSQLite.md](ChatSQLite.md) | AI 对话持久化迁移：从 `chat.json` 迁移到 SQLite | 已实现，本地数据已一次性迁移 |
-| [SearchMatchingRedesign.md](SearchMatchingRedesign.md) | 搜索匹配重设计：统一候选生成、特征打分、跨类别结果池与个性化 | Phase A 已实现（候选生成 + 特征打分）；Phase B/C 待实施 |
+| [SearchMatchingRedesign.md](SearchMatchingRedesign.md) | 搜索匹配重设计：统一候选生成、特征打分、跨类别结果池与个性化 | Phase A/B 已实现（候选生成 + 特征打分 + 跨类别候选池 + frecency）；Phase C 待实施 |
 
 ## 建议实施顺序
 

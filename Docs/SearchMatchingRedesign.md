@@ -1,6 +1,6 @@
 # 搜索匹配重设计（Human-First Matching）
 
-> 状态：**Phase A 已实现**——`SearchCandidate` 自动生成（拆词/缩写/拼音/本地化名/策划别名）与统一特征打分已替换旧的“名字/包名分区”逻辑；Phase B（跨类别结果池 + frecency）和 Phase C（typo 容错、查询联想）待实施。
+> 状态：**Phase A 与 Phase B 已实现**——`SearchCandidate` 自动生成与统一特征打分已替换旧的“名字/包名分区”逻辑；搜索类查询（应用/快捷操作/系统操作）已合并为带类别标签的统一候选池，使用记录升级为 frecency 有界加分；Phase C（typo 容错、查询联想）待实施。
 
 ## 1. 现状：为什么补丁越来越多
 

@@ -74,7 +74,7 @@ enum LauncherQuickAction: String, CaseIterable, Identifiable {
         }
     }
 
-    fileprivate var keywords: [String] {
+    var keywords: [String] {
         switch self {
         case .note:
             return ["笔记", "便笺", "记事", "note", "notes", "markdown", "md"]
@@ -135,7 +135,7 @@ enum SystemOperation: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    private var keywords: [String] {
+    var keywords: [String] {
         switch self {
         case .sleep:
             return ["睡眠", "休眠", "电脑睡眠", "系统睡眠", "mac 睡眠", "sleep", "sleep mac"]

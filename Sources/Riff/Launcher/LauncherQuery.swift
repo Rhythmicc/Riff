@@ -1,13 +1,14 @@
 import Foundation
 
 enum LauncherQueryIntent {
-    case applications(actions: [LauncherQuickAction])
-    case systemOperations([SystemOperation])
     case calculation(String)
     case currency(CurrencyQuery)
     case graph(expression: MathExpression?, error: String?)
     case unicode(UnicodeSearchQuery)
     case password(PasswordRequest)
+    /// Search-like query: apps, quick actions, and system operations compete
+    /// in one pool instead of one category pre-empting the others.
+    case search
 }
 
 enum LauncherQueryClassifier {
@@ -36,12 +37,7 @@ enum LauncherQueryClassifier {
             return .currency(conversion)
         }
 
-        let systemOperations = SystemOperation.matching(query)
-        if !systemOperations.isEmpty {
-            return .systemOperations(systemOperations)
-        }
-
-        return .applications(actions: LauncherQuickAction.matching(query))
+        return .search
     }
 
     static func calculation(for query: String) -> String? {
@@ -55,7 +51,6 @@ enum LauncherQueryClassifier {
 
 enum LauncherContent {
     case idle
-    case systemOperations([SystemOperation])
     case fallback(query: String, actions: [LauncherFallbackAction])
     case aiAnswer(
         provider: AIProvider,
@@ -64,9 +59,8 @@ enum LauncherContent {
         error: String?,
         isLoading: Bool
     )
-    case applications(
-        actions: [LauncherQuickAction],
-        items: [ApplicationRecord],
+    case search(
+        items: [LauncherSearchItem],
         hasMore: Bool,
         isSearching: Bool
     )
@@ -81,64 +75,71 @@ enum LauncherContent {
     )
     case unicode(query: UnicodeSearchQuery, items: [UnicodeSymbol], isSearching: Bool)
     case password(request: PasswordRequest, result: GeneratedPassword?, error: String?)
+    case component(
+        componentID: String,
+        query: String,
+        results: [ComponentResultItem],
+        isLoading: Bool
+    )
 
     var presentationKind: LauncherContentKind {
         switch self {
         case .idle: return .idle
-        case .systemOperations: return .systemOperations
         case .fallback: return .fallback
         case .aiAnswer: return .aiAnswer
-        case .applications: return .applications
+        case .search: return .search
         case .clipboard: return .clipboard
         case .calculation: return .calculation
         case .currency: return .currency
         case .graph: return .graph
         case .unicode: return .unicode
         case .password: return .password
+        case .component: return .component
         }
     }
 
     var isSettledForExperienceMetrics: Bool {
         switch self {
         case .idle: return false
-        case .applications(_, _, _, let isSearching): return !isSearching
+        case .search(_, _, let isSearching): return !isSearching
         case .currency(_, _, let isLoading): return !isLoading
         case .graph(_, _, _, let isLoading): return !isLoading
         case .unicode(_, _, let isSearching): return !isSearching
         case .aiAnswer(_, _, _, _, let isLoading): return !isLoading
-        case .systemOperations, .fallback, .clipboard, .calculation, .password: return true
+        case .component(_, _, _, let isLoading): return !isLoading
+        case .fallback, .clipboard, .calculation, .password: return true
         }
     }
 
     var producedResultsForExperienceMetrics: Bool {
         switch self {
         case .idle: return false
-        case .systemOperations(let operations): return !operations.isEmpty
         case .fallback(_, let actions): return !actions.isEmpty
         case .aiAnswer(_, _, let result, let error, _): return !result.isEmpty || error != nil
-        case .applications(let actions, let items, _, _): return !actions.isEmpty || !items.isEmpty
+        case .search(let items, _, _): return !items.isEmpty
         case .clipboard(let items): return !items.isEmpty
         case .calculation: return true
         case .currency(let result, let error, _): return result != nil || error != nil
         case .graph(let expression, _, let error, _): return expression != nil || error != nil
         case .unicode(_, let items, _): return !items.isEmpty
         case .password(_, let result, let error): return result != nil || error != nil
+        case .component(_, _, let results, _): return !results.isEmpty
         }
     }
 }
 
 enum LauncherContentKind: Hashable {
     case idle
-    case systemOperations
     case fallback
     case aiAnswer
-    case applications
+    case search
     case clipboard
     case calculation
     case currency
     case graph
     case unicode
     case password
+    case component
 }
 
 struct LauncherState {

@@ -105,6 +105,91 @@ struct AppRow: View {
     }
 }
 
+struct ComponentResultRow: View {
+    let item: ComponentResultItem
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: item.icon?.systemName ?? "square.grid.2x2")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(LauncherTheme.secondary)
+                .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.system(size: 16.5, weight: .medium))
+                    .lineLimit(1)
+                if let subtitle = item.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if selected {
+                Image(systemName: "return")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LauncherTheme.secondary)
+            }
+        }
+        .foregroundStyle(LauncherTheme.primary)
+        .padding(.horizontal, 18)
+        .frame(minHeight: LauncherView.candidateRowDesignHeight)
+        .riffSelectedSurface(selected, cornerRadius: 11)
+        .contentShape(Rectangle())
+    }
+}
+
+struct LauncherSearchRow: View {
+    let item: LauncherSearchItem
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 16) {
+            iconView
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.system(size: 16.5, weight: .medium))
+                    .lineLimit(1)
+                if let subtitle = item.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Text(item.category.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(LauncherTheme.secondary)
+            if selected {
+                Image(systemName: "return")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LauncherTheme.secondary)
+            }
+        }
+        .foregroundStyle(LauncherTheme.primary)
+        .padding(.horizontal, 18)
+        .frame(minHeight: LauncherView.candidateRowDesignHeight)
+        .riffSelectedSurface(selected, cornerRadius: 11)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        if case .application(let application) = item.payload {
+            Image(nsImage: LauncherImageCache.shared.applicationIcon(for: application.url))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 34, height: 34)
+        } else {
+            Image(systemName: item.symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(LauncherTheme.secondary)
+                .frame(width: 34, height: 34)
+        }
+    }
+}
+
 @MainActor
 final class LauncherImageCache {
     static let shared = LauncherImageCache()
