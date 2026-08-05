@@ -543,33 +543,10 @@ final class AppModel: ObservableObject {
         query: String,
         application: ApplicationRecord
     ) -> Int? {
-        let requireBoundary = query.count < 3
-        if let nameScore = FuzzyMatcher.score(
+        SearchScorer.score(
             query: query,
-            candidate: application.name,
-            requireBoundaryForShortQueries: requireBoundary
-        ) {
-            return 20_000 + nameScore
-        }
-        if let aliasScore = application.aliases.compactMap({
-            FuzzyMatcher.score(
-                query: query,
-                candidate: $0,
-                requireBoundaryForShortQueries: requireBoundary
-            )
-        }).max() {
-            // Aliases rank with display names but just below the real name.
-            return 19_900 + aliasScore
-        }
-        return application.bundleIdentifier
-            .flatMap {
-                FuzzyMatcher.contiguousScore(
-                    query: query,
-                    candidate: $0,
-                    requireBoundaryForShortQueries: requireBoundary
-                )
-            }
-            .map { $0 - 500 }
+            candidate: SearchCandidateBuilder.build(for: application)
+        )
     }
 
     static func rankApplicationsForPresentation(
@@ -577,26 +554,33 @@ final class AppModel: ObservableObject {
         searchedResults: [ApplicationRecord],
         usageStore: LauncherUsageStore
     ) -> [ApplicationRecord] {
-        let requireBoundary = query.count < 3
-        let nameMatches = searchedResults.filter {
-            FuzzyMatcher.score(
-                query: query,
-                candidate: $0.name,
-                requireBoundaryForShortQueries: requireBoundary
-            ) != nil
-                || $0.aliases.contains {
-                    FuzzyMatcher.score(
-                        query: query,
-                        candidate: $0,
-                        requireBoundaryForShortQueries: requireBoundary
-                    ) != nil
-                }
+        // Match quality dominates. Recent usage adds a bounded bonus so it
+        // breaks near-ties but can never bridge a real quality gap (for
+        // example initials-exact vs bundle-exact).
+        let scored = searchedResults.enumerated().map { index, application in
+            (
+                application: application,
+                score: SearchScorer.score(
+                    query: query,
+                    candidate: SearchCandidateBuilder.build(for: application)
+                ) ?? 0,
+                order: index
+            )
         }
-        let bundleOnlyMatches = searchedResults.filter { candidate in
-            !nameMatches.contains { $0.id == candidate.id }
-        }
-        return usageStore.sorted(nameMatches) { "app:\($0.id)" }
-            + usageStore.sorted(bundleOnlyMatches) { "app:\($0.id)" }
+        return scored.sorted { lhs, rhs in
+            let lhsFinal = lhs.score + usageBonus(usageStore, application: lhs.application)
+            let rhsFinal = rhs.score + usageBonus(usageStore, application: rhs.application)
+            if lhsFinal != rhsFinal { return lhsFinal > rhsFinal }
+            return lhs.order < rhs.order
+        }.map(\.application)
+    }
+
+    private static func usageBonus(
+        _ usageStore: LauncherUsageStore,
+        application: ApplicationRecord
+    ) -> Int {
+        guard let position = usageStore.position(of: "app:\(application.id)") else { return 0 }
+        return max(0, 250 - position * 25)
     }
 
     nonisolated static func isNoteQuery(_ query: String) -> Bool {

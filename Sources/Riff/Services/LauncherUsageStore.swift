@@ -23,6 +23,12 @@ final class LauncherUsageStore {
         defaults.set(recentIdentifiers, forKey: key)
     }
 
+    /// Position of an identifier in the recent list, or nil when it was never
+    /// used. Lower is more recent.
+    func position(of identifier: String) -> Int? {
+        recentIdentifiers.firstIndex(of: identifier)
+    }
+
     func sorted<Element>(
         _ elements: [Element],
         identifier: (Element) -> String
