@@ -4,7 +4,8 @@
 
 - AI 对话持久化迁移到 SQLite：对话与消息存入 `chat.sqlite3`（WAL），不再整文件重写 `chat.json`；本机旧数据已一次性迁移，`chat.json` 保留为 `chat.json.migrated`。
 - AI 服务层重构：新增统一传输层（OpenAI Responses / OpenAI 兼容 / Gemini），工具调用循环与 provider 无关，OpenAI 与 Gemini 现在同样支持本地工具；本地 llama.cpp 补全拆分为独立客户端。
-- 新增组件系统第一阶段：`ComponentRegistry` + `ComponentManager` 统一管理组件，设置页新增“组件”分区，可启停内置组件（应用启动为系统内置，不可禁用）。
+- 新增组件系统：`ComponentRegistry` + `ComponentManager` 统一管理组件，设置页新增“组件”分区，可启停内置组件（应用启动为系统内置，不可禁用）。
+- 第三方脚本组件支持：`manifest.json` 校验（反向域名 id、语义化版本、可执行文件路径、权限声明、超时上限）、目录或 `.riffcomponent`/zip 安装、子进程 JSONL 协议（查询/动作）、超时终止与输出上限、更新自动备份、设置页启停/卸载/打开组件目录。
 - 新增 `Docs/` 架构设计文档：组件系统、AI 服务统一、对话 SQLite 迁移。
 
 ## 0.5.0

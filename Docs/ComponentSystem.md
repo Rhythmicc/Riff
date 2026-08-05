@@ -1,5 +1,7 @@
 # 组件系统设计（Component System）
 
+> 第一阶段（协议/注册表/内置组件/设置页）与第二阶段（第三方脚本组件：manifest、安装、子进程宿主、启动器结果渲染）均已实现。本文档同时作为第三方开发者的规范参考。
+
 ## 1. 目标
 
 Riff 现在把“应用启动、剪贴板、随机密码、笔记、翻译、AI 对话”等能力散落在 `LauncherMode`、`LauncherQuickAction`、`PanelControllers` 和各 Model 里。缺少一个统一的“组件”概念。

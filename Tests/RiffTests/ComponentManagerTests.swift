@@ -94,4 +94,68 @@ final class ComponentManagerTests: XCTestCase {
         XCTAssertEqual(AppModel.componentID(for: .password), ComponentID.password)
         XCTAssertEqual(AppModel.componentID(for: .chat), ComponentID.chat)
     }
+
+    func testInstalledComponentMatchingAndAppModelRouting() async throws {
+        let suiteName = "ComponentManagerInstalledTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("riff-manager-installed-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: source.appendingPathComponent("bin", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let manifest = ComponentManifest(
+            schemaVersion: 1,
+            id: "dev.example.traffic",
+            name: "路况",
+            version: "1.0.0",
+            author: "Example",
+            icon: "car.fill",
+            keywords: ["路况", "traffic"],
+            executable: "bin/run",
+            permissions: [.network],
+            timeoutMs: 3_000,
+            surfaces: [.launcher]
+        )
+        try JSONEncoder().encode(manifest).write(to: source.appendingPathComponent("manifest.json"))
+        let scriptURL = source.appendingPathComponent("bin/run")
+        try """
+        #!/bin/zsh
+        read -r line
+        print '{"results":[{"id":"1","title":"长安街 缓行","subtitle":"约 20 分钟","copy":"长安街 缓行"}]}'
+        """.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: scriptURL.path
+        )
+
+        let store = InstalledComponentStore(
+            rootDirectory: root.appendingPathComponent("components", isDirectory: true)
+        )
+        let manager = ComponentManager(
+            registry: ComponentRegistry(installedStore: store),
+            defaults: defaults
+        )
+        try manager.install(from: source)
+
+        XCTAssertEqual(manager.installed.map(\.id), ["dev.example.traffic"])
+        XCTAssertTrue(manager.isEnabled("dev.example.traffic"))
+        XCTAssertNotNil(manager.installedMatch("路况", mode: .apps))
+
+        let adapter = try XCTUnwrap(manager.installedComponents().first)
+        let results = try await adapter.results(for: "路况")
+        XCTAssertEqual(results.items.first?.title, "长安街 缓行")
+
+        try manager.uninstall(id: "dev.example.traffic")
+        XCTAssertTrue(manager.installed.isEmpty)
+        XCTAssertNil(manager.installedMatch("路况", mode: .apps))
+    }
 }

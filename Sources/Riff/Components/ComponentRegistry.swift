@@ -1,28 +1,36 @@
 import Foundation
 
-/// Discovers components. This phase only knows the built-in catalog; the
-/// installed-component store for third-party components plugs in here later.
-final class ComponentRegistry: Sendable {
+/// Discovers components: the built-in catalog plus installed third-party
+/// script components. The installed store is reloaded by `ComponentManager`,
+/// so keystroke-path matching never scans the disk.
+final class ComponentRegistry {
     private let builtIn: [any RiffComponent]
+    let installedStore: InstalledComponentStore
 
-    init(builtIn: [any RiffComponent] = BuiltinComponentCatalog.all) {
+    init(
+        builtIn: [any RiffComponent] = BuiltinComponentCatalog.all,
+        installedStore: InstalledComponentStore = InstalledComponentStore()
+    ) {
         self.builtIn = builtIn
+        self.installedStore = installedStore
     }
 
     func builtInComponents() -> [any RiffComponent] {
         builtIn
     }
 
-    func component(id: String) -> (any RiffComponent)? {
-        builtIn.first { $0.id == id }
+    func installedComponents() -> [ScriptComponentAdapter] {
+        installedStore.loadInstalled().map(ScriptComponentAdapter.init)
     }
 
     func matching(
         _ query: String,
         mode: LauncherMode,
-        enabledIDs: Set<String>
+        enabledIDs: Set<String>,
+        installed: [ScriptComponentAdapter] = []
     ) -> [ComponentMatch] {
-        builtIn.compactMap { component in
+        let components = builtIn + installed
+        return components.compactMap { component in
             guard enabledIDs.contains(component.id),
                   let priority = component.matchPriority(for: query, mode: mode)
             else { return nil }

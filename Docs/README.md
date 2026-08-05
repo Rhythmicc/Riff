@@ -4,7 +4,7 @@
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
-| [ComponentSystem.md](ComponentSystem.md) | 组件管理系统：内置组件注册表、第三方组件规范、安装与安全模型 | 第一阶段已实现（协议/注册表/设置页）；第三方脚本组件待后续 |
+| [ComponentSystem.md](ComponentSystem.md) | 组件管理系统：内置组件注册表、第三方组件规范、安装与安全模型 | 已实现（含第三方脚本组件安装/卸载与启动器结果） |
 | [AIServiceUnification.md](AIServiceUnification.md) | AI 服务层重构：合并 provider 分支、统一流式与工具调用 | 已实现 |
 | [ChatSQLite.md](ChatSQLite.md) | AI 对话持久化迁移：从 `chat.json` 迁移到 SQLite | 已实现，本地数据已一次性迁移 |
 

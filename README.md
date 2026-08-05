@@ -26,7 +26,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the launcher state and performance bo
 - OpenAI、OpenRouter、Gemini、DeepSeek 四种翻译 Provider
 - API Key 保存在 macOS Keychain 的 `Riff` 服务项，不使用开发环境命名
 - 设置中提供仅保存在本机的体验指标：启动器会话、成功/放弃、焦点与查询耗时 P95；只保存限长数值，不记录任何查询或用户内容
-- 设置中的“组件”分区可启停内置组件（应用启动为系统内置）；第三方组件规范已设计，安装支持逐步开放
+- 设置中的“组件”分区可启停内置组件（应用启动为系统内置），并支持安装/更新/卸载第三方脚本组件
 
 ## 构建
 
@@ -52,6 +52,10 @@ Riff 需要 macOS 14 或更高版本。笔记编辑器使用固定版本的原�
 ### AI 对话存储
 
 对话与消息保存在 `~/Library/Application Support/Riff/chat.sqlite3`（WAL 模式），随用随写，不再整文件重写 `chat.json`。升级到 0.6.0 时旧数据由本机一次性迁移，原文件改名为 `chat.json.migrated` 保留。
+
+### 第三方组件
+
+组件安装在 `~/Library/Application Support/Riff/Components/` 下，每个组件是一个包含 `manifest.json` 和可执行文件的目录（或打包为 `.riffcomponent`）。Riff 以子进程方式运行组件，通过 JSONL over stdio 协议交互：组件声明 `network`、`pasteboard`、`files`、`keychain` 权限，Riff 在超时后终止进程并限制输出大小。卸载时旧版本会先备份到组件目录的 `.trash`。
 
 ### 本地笔记补全
 
