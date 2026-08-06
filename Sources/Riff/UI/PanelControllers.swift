@@ -208,7 +208,7 @@ final class LauncherPanelController: MaterialPanelController {
             close: { [weak self] in self?.dismiss() },
             showNote: showNote,
             showSettings: { [weak self] in self?.openSettings() },
-            setDesignHeight: { [weak self] height in self?.setDesignHeight(height) },
+            setDesignSize: { [weak self] size in self?.setDesignSize(size) },
             focusReady: { [weak self] in self?.experienceMetrics?.markLauncherFocusReady() }
         ), anchorsContentToTop: true)
         panel.hasShadow = true
@@ -339,8 +339,17 @@ final class LauncherPanelController: MaterialPanelController {
         panel.contentView?.layer?.removeAnimation(forKey: "riff.launcher.visibility")
         model.reset(for: mode)
         if mode == .apps { model.refreshApplications() }
-        setDesignHeight(
-            mode == .apps ? LauncherView.collapsedDesignHeight : LauncherView.designSize.height,
+        setDesignSize(
+            CGSize(
+                width: mode == .clipboard
+                    ? LauncherView.clipboardDesignWidth
+                    : LauncherView.designSize.width,
+                height: mode == .apps
+                    ? LauncherView.collapsedDesignHeight
+                    : (mode == .clipboard
+                        ? LauncherView.clipboardDesignHeight
+                        : LauncherView.designSize.height)
+            ),
             animated: false
         )
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -408,8 +417,11 @@ final class LauncherPanelController: MaterialPanelController {
         dismiss()
     }
 
-    private func setDesignHeight(_ designHeight: CGFloat, animated: Bool = true) {
-        let targetSize = LauncherView.windowSize(designHeight: designHeight)
+    private func setDesignSize(_ designSize: CGSize, animated: Bool = true) {
+        let targetSize = LauncherView.windowSize(
+            designWidth: designSize.width,
+            designHeight: designSize.height
+        )
         pendingResizeWorkItem?.cancel()
         pendingResizeWorkItem = nil
         guard panel.frame.size != targetSize else { return }

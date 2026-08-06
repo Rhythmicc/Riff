@@ -113,6 +113,22 @@ final class LauncherModeTests: XCTestCase {
         XCTAssertEqual(manyRows, LauncherView.designSize.height)
     }
 
+    func testClipboardWindowIsWiderThanAppsWindow() {
+        let clipboardSize = LauncherView.windowSize(
+            designWidth: LauncherView.clipboardDesignWidth,
+            designHeight: LauncherView.clipboardDesignHeight
+        )
+        let appsSize = LauncherView.windowSize(
+            designHeight: LauncherView.designSize.height
+        )
+
+        XCTAssertGreaterThan(clipboardSize.width, appsSize.width)
+        XCTAssertEqual(
+            clipboardSize.width,
+            LauncherView.clipboardDesignWidth * LauncherView.scale
+        )
+    }
+
     func testCommandNumberNavigationKeyCodes() {
         XCTAssertEqual(LauncherMode.navigationMode(for: 18), .apps)
         XCTAssertEqual(LauncherMode.navigationMode(for: 19), .clipboard)

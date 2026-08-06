@@ -5,6 +5,7 @@ struct LauncherView: View {
     static let designSize = CGSize(width: 840, height: 650)
     static let collapsedDesignHeight: CGFloat = 74
     static let clipboardDesignHeight: CGFloat = 860
+    static let clipboardDesignWidth: CGFloat = 1_060
     static let scale: CGFloat = 0.84
     static let unicodeGridColumnCount = 8
     static let candidateRowDesignHeight: CGFloat = 56
@@ -12,8 +13,18 @@ struct LauncherView: View {
     static let answerFontSize: CGFloat = 17
 
     static func windowSize(designHeight: CGFloat) -> CGSize {
+        windowSize(
+            designWidth: designSize.width,
+            designHeight: designHeight
+        )
+    }
+
+    static func windowSize(
+        designWidth: CGFloat,
+        designHeight: CGFloat
+    ) -> CGSize {
         CGSize(
-            width: designSize.width * scale,
+            width: designWidth * scale,
             height: designHeight * scale
         )
     }
@@ -46,7 +57,7 @@ struct LauncherView: View {
     let close: () -> Void
     let showNote: () -> Void
     let showSettings: () -> Void
-    let setDesignHeight: (CGFloat) -> Void
+    let setDesignSize: (CGSize) -> Void
     let focusReady: () -> Void
 
     @FocusState private var searchFocused: Bool
@@ -66,7 +77,7 @@ struct LauncherView: View {
             }
         }
         .frame(
-            width: Self.designSize.width,
+            width: desiredDesignWidth,
             height: desiredDesignHeight,
             alignment: .top
         )
@@ -82,14 +93,20 @@ struct LauncherView: View {
         // height changes, even though the NSPanel's top edge stays fixed.
         .scaleEffect(Self.scale, anchor: .topLeading)
         .frame(
-            width: Self.windowSize(designHeight: desiredDesignHeight).width,
-            height: Self.windowSize(designHeight: desiredDesignHeight).height,
+            width: Self.windowSize(
+                designWidth: desiredDesignWidth,
+                designHeight: desiredDesignHeight
+            ).width,
+            height: Self.windowSize(
+                designWidth: desiredDesignWidth,
+                designHeight: desiredDesignHeight
+            ).height,
             alignment: .topLeading
         )
         .onAppear {
-            setDesignHeight(desiredDesignHeight)
+            setDesignSize(desiredDesignSize)
         }
-        .onChange(of: desiredDesignHeight) { _, height in setDesignHeight(height) }
+        .onChange(of: desiredDesignSize) { _, size in setDesignSize(size) }
         .onReceive(NotificationCenter.default.publisher(for: .riffFocusLauncherSearch)) { _ in
             // The hosting view exists while its panel is hidden, so onAppear is
             // too early to establish an AppKit field editor. Toggle the focus
@@ -138,6 +155,14 @@ struct LauncherView: View {
             return 310
         }
         return Self.resultDesignHeight(rowCount: model.resultCount)
+    }
+
+    private var desiredDesignWidth: CGFloat {
+        model.mode == .clipboard ? Self.clipboardDesignWidth : Self.designSize.width
+    }
+
+    private var desiredDesignSize: CGSize {
+        CGSize(width: desiredDesignWidth, height: desiredDesignHeight)
     }
 
     private var searchHeader: some View {
@@ -286,7 +311,7 @@ struct LauncherView: View {
                 .padding(.top, 8)
             }
             .scrollIndicators(.visible)
-            .frame(maxWidth: showsClipboardPreview ? 620 : .infinity)
+            .frame(maxWidth: showsClipboardPreview ? 760 : .infinity)
 
             if showsClipboardPreview {
                 Rectangle().fill(LauncherTheme.hairline).frame(width: 1)

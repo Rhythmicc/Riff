@@ -47,7 +47,7 @@ final class LauncherVisualSnapshotTests: XCTestCase {
                 close: {},
                 showNote: {},
                 showSettings: {},
-                setDesignHeight: { _ in },
+                setDesignSize: { _ in },
                 focusReady: {}
             )
         }
