@@ -147,8 +147,34 @@ class MaterialPanelController {
         panel.contentView = container
     }
 
-    func showCentered(onPresented: (() -> Void)? = nil) {
-        panel.center()
+    /// Golden-section placement on the main screen's visible frame: the panel
+    /// center sits 61.8% up from the bottom (≈38.2% from the top), horizontally
+    /// centered. Used by the launcher so it appears at the eye of the screen
+    /// instead of dead center.
+    static func goldenFrame(for size: CGSize) -> NSRect {
+        guard let screen = NSScreen.main else {
+            return NSRect(origin: .zero, size: size)
+        }
+        let visible = screen.visibleFrame
+        let centerX = visible.midX
+        let centerY = visible.minY + visible.height * 0.618
+        return NSRect(
+            x: centerX - size.width / 2,
+            y: centerY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    func showCentered(
+        onPresented: (() -> Void)? = nil,
+        position: ((CGSize) -> NSRect)? = nil
+    ) {
+        if let position {
+            panel.setFrame(position(panel.frame.size), display: false)
+        } else {
+            panel.center()
+        }
         if activatesApplication {
             // IMEs only attach their marked-text session reliably to a window
             // owned by the active application. Hardware key events may still
@@ -354,7 +380,10 @@ final class LauncherPanelController: MaterialPanelController {
         )
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         panel.alphaValue = reduceMotion ? 1 : 0
-        showCentered { [weak self] in self?.requestSearchFocus() }
+        showCentered(
+            onPresented: { [weak self] in self?.requestSearchFocus() },
+            position: MaterialPanelController.goldenFrame
+        )
         panel.invalidateShadow()
 
         guard !reduceMotion else { return }
@@ -464,11 +493,20 @@ final class LauncherPanelController: MaterialPanelController {
         let searchWasFocused = panel.firstResponder is NSTextView
         configureVisibleSurface(for: targetSize, animated: animated)
 
-        // Keep the search bar fixed while results unfold below it.
-        let topEdge = panel.frame.maxY
-        var targetFrame = panel.frame
-        targetFrame.size = targetSize
-        targetFrame.origin.y = topEdge - targetSize.height
+        let targetFrame: NSRect
+        if model.mode == .clipboard {
+            // The clipboard panel is a destination view: keep it at the
+            // golden-section position after growing instead of leaving it
+            // anchored to the old top edge.
+            targetFrame = MaterialPanelController.goldenFrame(for: targetSize)
+        } else {
+            // Keep the search bar fixed while results unfold below it.
+            let topEdge = panel.frame.maxY
+            var frame = panel.frame
+            frame.size = targetSize
+            frame.origin.y = topEdge - targetSize.height
+            targetFrame = frame
+        }
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in

@@ -129,6 +129,25 @@ final class LauncherModeTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testGoldenFrameSitsAtGoldenSectionOnVisibleScreen() {
+        guard let screen = NSScreen.main else {
+            return XCTFail("no main screen")
+        }
+        let size = CGSize(width: 706, height: 723)
+
+        let frame = MaterialPanelController.goldenFrame(for: size)
+        let visible = screen.visibleFrame
+
+        XCTAssertEqual(frame.size, size)
+        XCTAssertEqual(frame.midX, visible.midX, accuracy: 0.5)
+        XCTAssertEqual(
+            frame.midY,
+            visible.minY + visible.height * 0.618,
+            accuracy: 0.5
+        )
+    }
+
     func testCommandNumberNavigationKeyCodes() {
         XCTAssertEqual(LauncherMode.navigationMode(for: 18), .apps)
         XCTAssertEqual(LauncherMode.navigationMode(for: 19), .clipboard)
